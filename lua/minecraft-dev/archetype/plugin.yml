@@ -1,0 +1,4 @@
+name: neokibattle
+version: '1.0-SNAPSHOT'
+main: com.example.artifact.Main
+api-version: '1.21'
