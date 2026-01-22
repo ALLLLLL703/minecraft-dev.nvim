@@ -1,15 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>com.example</groupId>
-  <artifactId>artifact</artifactId>
+
+  <groupId>%s</groupId>        <!-- ctx.group -->
+  <artifactId>%s</artifactId>  <!-- ctx.artifact -->
   <version>1.0-SNAPSHOT</version>
-  <packaging>jar</packaging>
-  <name>artifact</name>
+  <name>%s</name>              <!-- ctx.artifact -->
+
   <properties>
     <java.version>21</java.version>
+    <mc.version>%s</mc.version> <!-- ctx.mc_version -->
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
+
   <build>
     <defaultGoal>clean package</defaultGoal>
     <plugins>
@@ -43,17 +49,19 @@
       </resource>
     </resources>
   </build>
+
   <repositories>
     <repository>
       <id>papermc-repo</id>
       <url>https://repo.papermc.io/repository/maven-public/</url>
     </repository>
   </repositories>
+
   <dependencies>
     <dependency>
       <groupId>io.papermc.paper</groupId>
       <artifactId>paper-api</artifactId>
-      <version>1.21.1-R0.1-SNAPSHOT</version>
+      <version>${mc.version}-R0.1-SNAPSHOT</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>

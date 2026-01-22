@@ -1,0 +1,6 @@
+name: %s           
+version: '1.0-SNAPSHOT'
+main: %s.%s        
+api-version: '%s'  
+
+
