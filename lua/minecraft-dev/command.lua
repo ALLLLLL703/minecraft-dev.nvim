@@ -11,8 +11,8 @@ function M.dispatch(args)
 
 	local project = argv[1]
 	local build_tool = argv[2]
-	local path = argv[3]
-	local version = argv[4]
+	local version = argv[3]
+	local path = argv[4]
 
 	if project == "paper" then
 		require("minecraft-dev.generators.paper").run(build_tool, path, version)

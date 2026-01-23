@@ -1,0 +1,4 @@
+name: %s
+main: %s.%s
+version: %s
+api-version: '1.21'

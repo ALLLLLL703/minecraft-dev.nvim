@@ -2,17 +2,14 @@ local context = require("minecraft-dev.context")
 local fs = require("minecraft-dev.util.fs")
 local path_util = require("minecraft-dev.util.path")
 local version_util = require("minecraft-dev.version")
+local gradle_util = require("minecraft-dev.util.gradle")
 
 local M = {}
 
----@type string
 local DEFAULT_VERSION = "1.21"
 
----function
----@param sub_path string
----@return string
 local function read_template(sub_path)
-	local files = vim.api.nvim_get_runtime_file("archetype/paper_maven/" .. sub_path, true)
+	local files = vim.api.nvim_get_runtime_file("archetype/paper_gradle/" .. sub_path, true)
 	if #files == 0 then
 		error("Template file not found: " .. sub_path)
 	end
@@ -28,14 +25,18 @@ local function read_template(sub_path)
 	return content
 end
 
+--- generate entry
 ---@param project_path string
 ---@param version string
 function M.generate(project_path, version)
-	if version_util.resolve_family(version) == "v1_13_plus" then
-		M.generate_higher(project_path, version)
+	local mc_version = version or DEFAULT_VERSION
+	local family = version_util.resolve_family(mc_version)
+
+	if family == "v1_13_plus" then
+		M.generate_higher(project_path, mc_version)
 		return
 	end
-	M.generate_lower(project_path, version)
+	M.generate_lower(project_path, mc_version)
 end
 
 ---@param project_path string
@@ -43,7 +44,6 @@ end
 function M.generate_higher(project_path, version)
 	local path = project_path or vim.fn.getcwd()
 	local mc_version = version or DEFAULT_VERSION
-
 	local ctx = context.collect()
 	ctx.path = path
 	ctx.version = mc_version
@@ -54,9 +54,14 @@ function M.generate_higher(project_path, version)
 	local resources_dir = path_util.join(path, "src/main/resources")
 	fs.mkdir(resources_dir)
 
-	local pom_template = read_template("v1_13_plus/pom.xml")
-	local pom_content = string.format(pom_template, ctx.groupId, ctx.artifactId, ctx.artifactId, ctx.version)
-	fs.write_file(path_util.join(path, "pom.xml"), pom_content)
+	local build_gradle_template = read_template("v1_13_plus/build.gradle")
+	fs.write_file(
+		path_util.join(path, "build.gradle"),
+		string.format(build_gradle_template, ctx.groupId, ctx.artifactId, ctx.version)
+	)
+
+	local settings_gradle_template = read_template("v1_13_plus/settings.gradle")
+	fs.write_file(path_util.join(path, "settings.gradle"), string.format(settings_gradle_template, ctx.artifactId))
 
 	local plugin_template = read_template("v1_13_plus/plugin.yml")
 	local plugin_content = string.format(plugin_template, ctx.artifactId, ctx.package, ctx.main, ctx.version)
@@ -65,8 +70,9 @@ function M.generate_higher(project_path, version)
 	local main_template = read_template("v1_13_plus/Main.java")
 	local main_content = string.format(main_template, ctx.package, ctx.main, ctx.main, ctx.main)
 	fs.write_file(path_util.join(src_dir, ctx.main .. ".java"), main_content)
+	gradle_util.generate_gradlew(path)
 
-	vim.notify("Paper maven project generate at : " .. path .. "\n mc_version: " .. mc_version)
+	vim.notify("Paper gradle (1.13+) project generated add" .. path)
 end
 
 ---@param project_path string
@@ -74,7 +80,6 @@ end
 function M.generate_lower(project_path, version)
 	local path = project_path or vim.fn.getcwd()
 	local mc_version = version or DEFAULT_VERSION
-
 	local ctx = context.collect()
 	ctx.path = path
 	ctx.version = mc_version
@@ -85,18 +90,24 @@ function M.generate_lower(project_path, version)
 	local resources_dir = path_util.join(path, "src/main/resources")
 	fs.mkdir(resources_dir)
 
-	local pom_template = read_template("v1_8/pom.xml")
-	local pom_content = string.format(pom_template, ctx.groupId, ctx.artifactId, ctx.artifactId, ctx.artifactId)
-	fs.write_file(path_util.join(path, "pom.xml"), pom_content)
+	local build_gradle_template = read_template("1.13-/build.gradle")
+	fs.write_file(
+		path_util.join(path, "build.gradle"),
+		string.format(build_gradle_template, ctx.groupId, ctx.artifactId, ctx.version)
+	)
 
-	local plugin_template = read_template("v1_8/plugin.yml")
+	local settings_gradle_template = read_template("1.13-/settings.gradle")
+	fs.write_file(path_util.join(path, "settings.gradle"), string.format(settings_gradle_template, ctx.artifactId))
+
+	local plugin_template = read_template("1.13-/plugin.yml")
 	local plugin_content = string.format(plugin_template, ctx.artifactId, ctx.package, ctx.main, ctx.version)
 	fs.write_file(path_util.join(resources_dir, "plugin.yml"), plugin_content)
 
-	local main_template = read_template("v1_8/Main.java")
+	local main_template = read_template("1.13-/Main.java")
 	local main_content = string.format(main_template, ctx.package, ctx.main, ctx.main, ctx.main)
 	fs.write_file(path_util.join(src_dir, ctx.main .. ".java"), main_content)
 
-	vim.notify("Paper maven project generate at : " .. path .. "\n mc_version: " .. mc_version)
+	gradle_util.generate_gradlew(path)
+	vim.notify("Paper gradle (1.13-) project generated add" .. path)
 end
 return M

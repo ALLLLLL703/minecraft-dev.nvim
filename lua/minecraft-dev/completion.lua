@@ -9,7 +9,7 @@ function M.complete(arg_lead, cmd_line)
 		return completions.project
 	elseif index == 2 then
 		return completions.build
-	elseif index == 3 then
+	elseif index >= 4 then
 		return vim.fn.getcompletion(arg_lead, "file")
 	end
 end
