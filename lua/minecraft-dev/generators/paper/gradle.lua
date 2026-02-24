@@ -54,9 +54,9 @@ function M.generate_higher(project_path, version)
 	local resources_dir = path_util.join(path, "src/main/resources")
 	fs.mkdir(resources_dir)
 
-	local build_gradle_template = read_template("v1_13_plus/build.gradle")
+	local build_gradle_template = read_template("v1_13_plus/build.gradle.kts")
 	fs.write_file(
-		path_util.join(path, "build.gradle"),
+		path_util.join(path, "build.gradle.kts"),
 		string.format(build_gradle_template, ctx.groupId, ctx.artifactId, ctx.version)
 	)
 
