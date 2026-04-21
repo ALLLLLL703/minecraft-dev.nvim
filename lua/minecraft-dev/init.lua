@@ -9,8 +9,8 @@ end
 -- 	for _, module in ipairs(package.loaded) do
 -- 		if module:match("^minecraft%-dev") then
 -- 			package.loaded[module] = nil
--- 		end
--- 	end
+-- end
+-- end
 -- 	M.setup()
 -- end
 
