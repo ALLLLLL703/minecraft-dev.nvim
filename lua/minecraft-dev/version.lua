@@ -1,6 +1,7 @@
 local M = {}
 
 ---@param mc_version string
+---@return "v1_13_plus" | "v1_8" | nil
 function M.resolve_family(mc_version)
 	if not mc_version then
 		return "v1_13_plus"

@@ -10,11 +10,13 @@ function M.generate_gradlew(project_path)
 	vim.notify("Generating Gradle Wrapper...", vim.log.levels.INFO)
 
 	vim.system({ "gradle", "wrapper" }, { cwd = project_path }, function(result)
-		if result.code ~= 0 then
-			vim.notify("Failed to generate Gradle Wrapper: " .. (result.stderr or ""), vim.log.levels.ERROR)
-			return
-		end
-		vim.notify("Gradle Wrapper generated successfully.", vim.log.levels.INFO)
+		vim.schedule(function()
+			if result.code ~= 0 then
+				vim.notify("Failed to generate Gradle Wrapper: " .. (result.stderr or ""), vim.log.levels.ERROR)
+				return
+			end
+			vim.notify("Gradle Wrapper generated successfully.", vim.log.levels.INFO)
+		end)
 	end)
 end
 

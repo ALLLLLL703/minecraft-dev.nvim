@@ -2,6 +2,9 @@ local M = {}
 
 local sep = package.config:sub(1, 1)
 
+---dont need slash
+---@param ... string
+---@return string
 function M.join(...)
 	local parts = { ... }
 	return table.concat(parts, sep)
