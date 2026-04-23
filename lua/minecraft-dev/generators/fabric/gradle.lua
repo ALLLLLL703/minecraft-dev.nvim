@@ -1,3 +1,4 @@
+---@diagnostic disable: unused-function
 local M = {}
 local context = require("minecraft-dev.context")
 local fs = require("minecraft-dev.util.fs")
@@ -8,6 +9,20 @@ local choices = require("minecraft-dev.util.make_your_choice")
 local lang = "java"
 local DEFAULT_VERSION = "1.21"
 
+---@class  FabricDefaultVersionData
+---@field loom_version string
+---@field fabric_api string
+---@field loader string
+---@field yarn string?
+local default_value = {
+	loom_version = "1.16-SNAPSHOT",
+	fabric_api = "0.146.0+",
+	loader = "0.19.2",
+	yarn = nil,
+}
+local prompt_line = {
+	loom_version = "loom version?",
+}
 ---nothing
 ---@param sub_path string
 ---@param lang_? string
@@ -29,10 +44,41 @@ local function read_template(sub_path, lang_)
 	if not file then
 		error("Failed to open template file" .. sub_path)
 	end
-	vim.notify("Reading template file: " .. files[1])
+	if require("minecraft-dev").config.debug then
+		vim.notify("Reading template file: " .. files[1])
+	end
 	local content = file:read("*a")
 	file:close()
 	return content
+end
+
+---@param version string
+---@return FabricDefaultVersionData
+local function read_json_to_version_info(version)
+	local json_dir = "data/fabric/versions"
+	local files = vim.api.nvim_get_runtime_file(path_util.join(json_dir, version .. ".json"), true)
+	if #files == 0 then
+		vim.notify(
+			"Data json file for version " .. version:lower() .. " not found\nusing default...",
+			vim.log.levels.ERROR
+		)
+		return default_value
+	end
+
+	---@type file*?
+	local file = io.open(files[1], "r")
+	if not file then
+		vim.notify("error on open file " .. version .. ".json\n using default", vim.log.levels.ERROR)
+		return default_value
+	end
+
+	if require("minecraft-dev").config.debug then
+		vim.notify("Reading json data file: " .. files[1])
+	end
+
+	local content = file:read("*a")
+	file:close()
+	return vim.fn.json_decode(content)
 end
 
 ---@param project_path string
@@ -56,6 +102,7 @@ end
 
 ---@param ctx ProjectContext
 local function generate_basic(ctx)
+	local json_data_table = read_json_to_version_info(ctx.version)
 	local resources_dir = path_util.join(ctx.path, "src/main/resources")
 	fs.mkdir(resources_dir)
 	local resources_client_dir = path_util.join(ctx.path, "src/client/resources")
@@ -63,21 +110,22 @@ local function generate_basic(ctx)
 
 	local build_gradle_content = read_template("build.gradle")
 	fs.write_file(path_util.join(ctx.path, "build.gradle"), string.format(build_gradle_content))
-	local fabric_loom_version = ""
-	vim.ui.input({ default = "1.16-SNAPSHOT", prompt = "loom version?" }, function(input)
-		fabric_loom_version = Not_empty_or(input, "1.16-SNAPSHOT}")
-	end)
+	local fabric_loom_version =
+		Not_empty_or(vim.fn.input(prompt_line.loom_version, default_value.loom_version), default_value.loom_version)
 
 	local gradle_properties_content = read_template("gradle.properties")
+
 	fs.write_file(
 		path_util.join(ctx.path, "gradle.properties"),
 		string.format(
 			gradle_properties_content,
 			ctx.version,
+			json_data_table.loader,
 			ctx.groupId,
 			ctx.artifactId,
-			ctx.version,
-			fabric_loom_version
+			json_data_table.fabric_api[1],
+			fabric_loom_version,
+			json_data_table.yarn
 		)
 	)
 
@@ -146,7 +194,7 @@ function M.generate_higher_java(project_path, version)
 	ctx.package_path = ctx.package:gsub("%.", "/")
 	ctx.lang = "java"
 
-	local src_client_dir = path_util.join(ctx.path, "src/client/java/", ctx.package_path, "client")
+	local src_client_dir = path_util.join(ctx.path, "src/client/java", ctx.package_path)
 	fs.mkdir(src_client_dir)
 	local src_dir = path_util.join(ctx.path, "src/main/java", ctx.package_path)
 	fs.mkdir(src_dir)

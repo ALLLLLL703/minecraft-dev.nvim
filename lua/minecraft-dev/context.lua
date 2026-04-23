@@ -10,6 +10,8 @@ local M = {}
 ---@field package_path? string
 
 ---@type ProjectContext
+M.current_context = DefaultProjectContext
+---@type ProjectContext
 DefaultProjectContext = {
 	groupId = "com.example",
 	artifactId = "demo",
@@ -51,18 +53,14 @@ end
 
 ---@return ProjectContext
 function M.collect()
-	local groupId = ""
-	vim.ui.input({ default = DefaultProjectContext.groupId, prompt = prompt_lines.groupId }, function(input)
-		groupId = Not_empty_or(input, DefaultProjectContext.groupId)
-	end)
-	local artifactId = ""
-	vim.ui.input({ default = DefaultProjectContext.artifactId, prompt = prompt_lines.artifactId }, function(input)
-		artifactId = Not_empty_or(input, DefaultProjectContext.artifactId)
-	end)
-	local main = ""
-	vim.ui.input({ default = DefaultProjectContext.main, prompt = prompt_lines.main }, function(input)
-		main = Not_empty_or(input, DefaultProjectContext.main)
-	end)
+	local groupId =
+		Not_empty_or(vim.fn.input(prompt_lines.groupId, DefaultProjectContext.groupId), DefaultProjectContext.groupId)
+
+	local artifactId = Not_empty_or(
+		vim.fn.input(prompt_lines.artifactId, DefaultProjectContext.artifactId),
+		DefaultProjectContext.artifactId
+	)
+	local main = Not_empty_or(vim.fn.input(prompt_lines.main, DefaultProjectContext.main), DefaultProjectContext.main)
 
 	return {
 		groupId = groupId,
