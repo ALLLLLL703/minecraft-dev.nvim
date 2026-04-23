@@ -1,4 +1,4 @@
-package %s.client;
+package %s;
 
 import net.fabricmc.api.ClientModInitializer;
 
