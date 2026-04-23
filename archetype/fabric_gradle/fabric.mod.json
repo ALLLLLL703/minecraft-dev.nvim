@@ -1,0 +1,25 @@
+{
+	"schemaVersion": 1,
+	"id": "%s",
+	"version": "${version}",
+	"name": "%s",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"%s.%s"
+		],
+		"client": [
+			"%s.client.%sClient"
+		],
+		"fabric-datagen": [
+			"%s.%sDataGenerator"
+		]
+	},
+	"mixins": [],
+	"depends": {
+		"fabricloader": ">=0.15.0",
+		"minecraft": "~%s",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

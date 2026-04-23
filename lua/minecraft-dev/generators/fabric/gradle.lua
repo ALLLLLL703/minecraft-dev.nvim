@@ -19,7 +19,7 @@ local function read_template(sub_path, lang_)
 		archetype_path = path_util.join(archetype_path, "kotlin")
 	end
 
-	local files = vim.api.nvim_get_runtime_file(path_util.join("archetype/fabric_gradle", sub_path), true)
+	local files = vim.api.nvim_get_runtime_file(path_util.join(archetype_path, sub_path), true)
 	if #files == 0 then
 		error("Template file not found" .. sub_path)
 	end
@@ -54,6 +54,54 @@ function M.generate(project_path, version)
 	end)
 end
 
+---@param ctx ProjectContext
+local function generate_basic(ctx)
+	local resources_dir = path_util.join(ctx.path, "src/main/resources")
+	fs.mkdir(resources_dir)
+	local resources_client_dir = path_util.join(ctx.path, "src/client/resources")
+	fs.mkdir(resources_client_dir)
+
+	local build_gradle_content = read_template("build.gradle")
+	fs.write_file(path_util.join(ctx.path, "build.gradle"), string.format(build_gradle_content))
+	local fabric_loom_version = ""
+	vim.ui.input({ default = "1.16-SNAPSHOT", prompt = "loom version?" }, function(input)
+		fabric_loom_version = Not_empty_or(input, "1.16-SNAPSHOT}")
+	end)
+
+	local gradle_properties_content = read_template("gradle.properties")
+	fs.write_file(
+		path_util.join(ctx.path, "gradle.properties"),
+		string.format(
+			gradle_properties_content,
+			ctx.version,
+			ctx.groupId,
+			ctx.artifactId,
+			ctx.version,
+			fabric_loom_version
+		)
+	)
+
+	local settings_gradle_content = read_template("settings.gradle")
+	fs.write_file(path_util.join(ctx.path, "settings.gradle"), string.format(settings_gradle_content))
+
+	local fabric_mod_json_content = read_template("fabric.mod.json")
+	fs.write_file(
+		path_util.join(resources_dir, "fabric.mod.json"),
+		string.format(
+			fabric_mod_json_content,
+			ctx.artifactId,
+			ctx.artifactId,
+			ctx.package,
+			ctx.main,
+			ctx.package,
+			ctx.main,
+			ctx.package,
+			ctx.main,
+			ctx.version
+		)
+	)
+end
+
 ---@param project_path string
 ---@param version string
 function M.generate_higher_kotlin(project_path, version)
@@ -73,17 +121,7 @@ function M.generate_higher_kotlin(project_path, version)
 	local package_main_dir = path_util.join(src_dir, ctx.package_path)
 	fs.mkdir(package_main_dir)
 
-	local resources_dir = path_util.join(ctx.path, "src/main/resources")
-	fs.mkdir(resources_dir)
-	local build_gradle_content = read_template("build.gradle")
-	fs.write_file(path_util.join(ctx.path, "build.gradle"), string.format(build_gradle_content))
-
-	local gradle_properties_content = read_template("gradle.properties")
-	fs.write_file(
-		path_util.join(ctx.path, "gradle.properties"),
-		string.format(gradle_properties_content, ctx.version, ctx.version, ctx.groupId, ctx.artifactId, ctx.version)
-	)
-
+	generate_basic(ctx)
 	local kotlin_client_content = read_template("Client.kt", ctx.lang)
 	fs.write_file(
 		path_util.join(package_client_dir, ctx.main .. "Client.kt"),
@@ -91,7 +129,7 @@ function M.generate_higher_kotlin(project_path, version)
 	)
 
 	local kotlin_server_content = read_template("Main.kt", ctx.lang)
-	fs.write_file(path_util.join(package_main_dir, ctx.main .. "kt"), kotlin_server_content)
+	fs.write_file(path_util.join(package_main_dir, ctx.main .. ".kt"), kotlin_server_content)
 
 	gradle_util.generate_gradlew(ctx.path)
 	vim.notify("Generate fabric mod proeject successfully")
@@ -113,38 +151,25 @@ function M.generate_higher_java(project_path, version)
 	local src_dir = path_util.join(ctx.path, "src/main/java", ctx.package_path)
 	fs.mkdir(src_dir)
 
-	local resources_dir = path_util.join(ctx.path, "src/main/resources")
-	fs.mkdir(resources_dir)
-
-	local build_gradle_content = read_template("build.gradle")
-	fs.write_file(path_util.join(ctx.path, "build.gradle"), string.format(build_gradle_content))
-
-	local gradle_properties_content = read_template("gradle.properties")
-	fs.write_file(
-		path_util.join(ctx.path, "gradle.properties"),
-		string.format(gradle_properties_content, ctx.version, ctx.version, ctx.groupId, ctx.artifactId, ctx.version)
-	)
+	generate_basic(ctx)
 
 	local client_java_content = read_template("Client.java")
 	local data_java_content = read_template("Data.java")
 	fs.write_file(
-		path_util.join(src_client_dir, M.upper_first_letter(ctx.artifactId) .. "DataGenerator.java"),
-		string.format(data_java_content, ctx.package, M.upper_first_letter(ctx.artifactId))
+		path_util.join(src_client_dir, M.upper_first_letter(ctx.main) .. "DataGenerator.java"),
+		string.format(data_java_content, ctx.package, ctx.main)
 	)
 
 	fs.write_file(
-		path_util.join(src_client_dir, M.upper_first_letter(ctx.artifactId) .. "Client.java"),
-		string.format(client_java_content, ctx.package, M.upper_first_letter(ctx.artifactId))
+		path_util.join(src_client_dir, M.upper_first_letter(ctx.main) .. "Client.java"),
+		string.format(client_java_content, ctx.package, ctx.main)
 	)
 
 	local main_java_content = read_template("Main.java")
 	fs.write_file(
-		path_util.join(src_dir, M.upper_first_letter(ctx.artifactId) .. ".java"),
-		string.format(main_java_content, ctx.package, M.upper_first_letter(ctx.artifactId))
+		path_util.join(src_dir, M.upper_first_letter(ctx.main) .. ".java"),
+		string.format(main_java_content, ctx.package, ctx.main)
 	)
-
-	local settings_gradle_content = read_template("settings.gradle")
-	fs.write_file(path_util.join(ctx.path, "settings.gradle"), string.format(settings_gradle_content))
 
 	gradle_util.generate_gradlew(ctx.path)
 

@@ -10,3 +10,8 @@
 /CLAUDE.md
 /CLAUDE.md
 /.gradle
+/archetype/fabric_gradle/.gradle
+/archetype/fabric_gradle/.project
+/archetype/fabric_gradle/.settings
+/test
+/archetype/fabric_gradle/build
