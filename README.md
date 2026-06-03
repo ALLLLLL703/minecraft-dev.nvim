@@ -20,8 +20,9 @@ Now can using to generate
 ## Requirements
 
 - Neovim 0.12+
-- Picker installed
-    - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) (Optional) for language(kotlin/java) pick
+- Picker support
+    - built-in `vim.ui.select` works by default
+    - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) is optional for a richer language picker experience
 
 ## Installation
 
@@ -43,14 +44,36 @@ all your need is to setup this plugin manualy
 
 ```lua
 require("minecraft-dev").setup({
-    debug = true | false,
+	logging = {
+		debug = true, -- optional
+	},
+	defaults = {
+		paper = {
+			version = "1.21",
+		},
+		fabric = {
+			version = "1.21.11",
+			side = "both",
+			generate_datagen = true,
+			use_mixins = false,
+		},
+	},
 })
 
 ```
 and use the command
 ```vim
-GmcPro [fabric|paper] [gradle|maven] version_minecraft path/to/the/place/your/want/to/init/your/project
+GmcPro [fabric|paper] [gradle|maven] version_minecraft [path/to/the/place/your/want/to/init/your/project]
 ```
+
+When generating a Fabric project, the plugin now asks for:
+
+- language: `java` or `kotlin`
+- environment side: `client`, `server`, or `both`
+- whether to generate datagen entrypoints
+- whether to generate a mixin config and example mixin class
+
+If you cancel a selection with `Esc`, the configured default is used.
 
 ## Contribute
 
@@ -60,8 +83,17 @@ I'll check it as soon as possible
 At last, thank you all for the using or contributing this plugin :D
 ♥️
 
+### Dev Check
+
+Run the lightweight refactor checks with:
+
+```bash
+nvim --headless --clean -u NONE \
+  "+set rtp+=." \
+  "+lua dofile('test/test_refactor.lua')" \
+  +qa
+```
+
 ### last
 
 im not good at english so plz forgive me T_T
-
-

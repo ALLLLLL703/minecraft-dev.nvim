@@ -1,12 +1,14 @@
 local M = {}
+local notify = require("minecraft-dev.util.notify")
 
----Todo
 function M.run(build_tool, path, version)
 	if build_tool == "gradle" then
-		vim.notify("generating fabric mc project in gradle")
+		notify.notify(vim.log.levels.INFO, { "fabric", "generating_gradle" })
 		require("minecraft-dev.generators.fabric.gradle").generate(path, version)
 	elseif build_tool == "maven" then
-		vim.notify("fabric template of maven is not supportted")
+		notify.notify(vim.log.levels.WARN, { "fabric", "maven_unsupported" })
+	else
+		notify.notify(vim.log.levels.ERROR, { "command", "unsupported_build" }, tostring(build_tool))
 	end
 end
 

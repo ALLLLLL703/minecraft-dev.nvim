@@ -1,7 +1,105 @@
 local M = {}
+
 ---@type MinecraftDevConfig
 M.default_config = {
-	debug = false,
+	logging = {
+		debug = false,
+	},
+	defaults = {
+		project = {
+			group_id = "com.example",
+			artifact_id = "demo",
+			main_class = "Main",
+		},
+		command = {
+			use_cwd_when_path_missing = true,
+		},
+		paper = {
+			version = "1.21",
+		},
+		fabric = {
+			version = "1.21",
+			language = "java",
+			side = "both",
+			generate_datagen = true,
+			use_mixins = false,
+			version_data = {
+				loom_version = "1.16-SNAPSHOT",
+				fabric_api = "0.146.0+",
+				loader = "0.19.2",
+				yarn = nil,
+			},
+		},
+	},
+	prompts = {
+		project = {
+			group_id = "groupId?",
+			artifact_id = "artifactId?",
+			main_class = "main class name?",
+		},
+		fabric = {
+			loom_version = "loom version?",
+			select_language = "Select language",
+			select_side = "Select environment side",
+			generate_datagen = "Generate datagen entrypoint?",
+			use_mixins = "Generate mixin config and example?",
+			telescope_title = "select language",
+		},
+	},
+	messages = {
+		command = {
+			invalid_args = "Usage: GmcPro [fabric|paper] [gradle|maven] <minecraft_version> [path]",
+			unsupported_project = "Unsupported project type: %s",
+			unsupported_build = "Unsupported build tool: %s",
+		},
+		reload = {
+			success = "Successfully reloaded minecraft-dev!",
+			module_reloaded = "%s reloaded",
+		},
+		template = {
+			missing = "Template file not found: %s",
+			open_failed = "Failed to open template file: %s",
+			reading = "Reading template file: %s",
+		},
+		data = {
+			version_file_missing = "Data json file for version %s not found; using defaults.",
+			version_file_open_failed = "Failed to open version data for %s; using defaults.",
+			reading_json = "Reading json data file: %s",
+		},
+		gradle = {
+			missing = "Gradle is not installed or not in PATH",
+			generating = "Generating Gradle Wrapper...",
+			failed = "Failed to generate Gradle Wrapper: %s",
+			success = "Gradle Wrapper generated successfully.",
+		},
+		paper = {
+			generated_gradle_high = "Generated Paper Gradle project (1.13+) at %s",
+			generated_gradle_low = "Generated Paper Gradle project (1.13-) at %s",
+			generated_maven = "Generated Paper Maven project at: %s\nmc_version: %s",
+		},
+		fabric = {
+			generating_gradle = "Generating Fabric project with Gradle",
+			maven_unsupported = "Fabric Maven template is not supported yet",
+			lower_version_unsupported = "Lower Minecraft versions are not supported for Fabric yet",
+			generated = "Generated Fabric mod project successfully.",
+		},
+	},
 }
+
+---@param opts? MinecraftDevConfig | MinecraftDevConfigOpt
+---@return MinecraftDevConfig
+function M.normalize(opts)
+	local normalized = vim.deepcopy(opts or {})
+
+	if normalized.debug ~= nil then
+		normalized.logging = normalized.logging or {}
+		if normalized.logging.debug == nil then
+			normalized.logging.debug = normalized.debug
+		end
+		normalized.debug = nil
+	end
+
+	return vim.tbl_deep_extend("force", vim.deepcopy(M.default_config), normalized)
+end
 
 return M

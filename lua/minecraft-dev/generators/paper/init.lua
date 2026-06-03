@@ -1,4 +1,5 @@
 local M = {}
+local notify = require("minecraft-dev.util.notify")
 
 function M.run(build, path, version)
 	path = path or vim.fn.getcwd()
@@ -11,7 +12,7 @@ function M.run(build, path, version)
 		return
 	end
 
-	vim.notify("Unsupported build tool: " .. tostring(build), vim.log.levels.ERROR)
+	notify.notify(vim.log.levels.ERROR, { "command", "unsupported_build" }, tostring(build))
 end
 
 return M

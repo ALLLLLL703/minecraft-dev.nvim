@@ -1,6 +1,5 @@
 local M = {}
 
----//Todo
 function M.generate(path, version)
 
 	---read template from template runtime file
