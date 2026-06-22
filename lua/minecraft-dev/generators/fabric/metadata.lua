@@ -87,7 +87,7 @@ function M.entrypoints(ctx, options)
 	end
 
 	if options.side ~= "server" then
-		entrypoints.client = { string.format("%s.client.%s", ctx.package, M.client_class_name(ctx, options)) }
+		entrypoints.client = { string.format("%s.%s", ctx.package, M.client_class_name(ctx, options)) }
 	end
 
 	if options.generate_datagen then

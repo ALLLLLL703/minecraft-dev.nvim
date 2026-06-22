@@ -16,6 +16,7 @@ M.default_config = {
 		},
 		paper = {
 			version = "1.21",
+			language = "java",
 		},
 		fabric = {
 			version = "1.21",
@@ -36,6 +37,10 @@ M.default_config = {
 			group_id = "groupId?",
 			artifact_id = "artifactId?",
 			main_class = "main class name?",
+		},
+		paper = {
+			select_language = "Select language",
+			telescope_title = "select Paper language",
 		},
 		fabric = {
 			loom_version = "loom version?",

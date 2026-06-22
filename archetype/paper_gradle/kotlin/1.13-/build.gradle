@@ -1,0 +1,25 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '2.0.20'
+    id 'com.gradleup.shadow' version '8.3.5'
+}
+
+group = "%s"
+version = "%s"
+
+repositories {
+    mavenCentral()
+    maven { url = uri("https://hub.spigotmc.org/nexus/content/repositories/snapshots/") }
+}
+
+dependencies {
+    compileOnly("org.spigotmc:spigot-api:%s-R0.1-SNAPSHOT")
+    implementation "org.jetbrains.kotlin:kotlin-stdlib"
+}
+
+kotlin {
+    jvmToolchain(8)
+}
+
+tasks.build {
+    dependsOn tasks.shadowJar
+}

@@ -5,6 +5,7 @@ still developing,,,
 Now can using to generate 
 - fabric kotlin mod
 - fabric java mod
+- paper kotlin plugin
 - paper java plugin
 
 
@@ -50,6 +51,7 @@ require("minecraft-dev").setup({
 	defaults = {
 		paper = {
 			version = "1.21",
+			language = "java",
 		},
 		fabric = {
 			version = "1.21.11",
@@ -74,6 +76,8 @@ When generating a Fabric project, the plugin now asks for:
 - whether to generate a mixin config and example mixin class
 
 If you cancel a selection with `Esc`, the configured default is used.
+
+When generating a Paper project, the plugin asks for `java` or `kotlin` and uses `defaults.paper.language` when cancelled.
 
 ## Contribute
 
