@@ -200,6 +200,47 @@ local function generate_from_root(options, root)
 	return result, nil
 end
 
+local function discover(root)
+	root = vim.fs.normalize(root)
+	local templates = {}
+	local function walk(directory, relative_directory)
+		for name, entry_type in vim.fs.dir(directory) do
+			local relative = relative_directory == "" and name or relative_directory .. "/" .. name
+			if entry_type == "directory" and name ~= ".git" then
+				walk(vim.fs.joinpath(directory, name), relative)
+			elseif entry_type == "file" and name:match("%.mcdev%.template%.json$") then
+				local content = read_file(vim.fs.joinpath(directory, name))
+				local ok, descriptor = pcall(vim.json.decode, content or "")
+				if ok and (descriptor.version == 1 or descriptor.version == 2 or descriptor.version == 3) and descriptor.hidden ~= true then
+					table.insert(templates, {
+						descriptor = relative,
+						label = descriptor.label or (name == ".mcdev.template.json" and vim.fs.basename(directory) or name:gsub("%.mcdev%.template%.json$", "")),
+						group = descriptor.group or "default",
+						version = descriptor.version,
+					})
+				end
+			end
+		end
+	end
+	walk(root, "")
+	table.sort(templates, function(left, right) return left.descriptor < right.descriptor end)
+	return templates
+end
+
+---@param options table
+---@return table?, table?
+function M.list(options)
+	if type(options) ~= "table" then return nil, { code = "invalid_options" } end
+	if options.provider == "local" then return discover(options.source), nil end
+	if type(options.callback) ~= "function" then return nil, { code = "callback_required" } end
+	return require("minecraft-dev.custom.providers").prepare(options, function(root, provider_error, cleanup)
+		if provider_error then options.callback(nil, provider_error) return end
+		local templates = discover(root)
+		if cleanup then cleanup() end
+		options.callback(templates, nil)
+	end)
+end
+
 ---@param options table
 ---@return table?, table?
 function M.generate(options)

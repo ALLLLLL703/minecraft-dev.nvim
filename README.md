@@ -141,6 +141,7 @@ conditionals.
 Available providers are `local`, `archive`, `remote`, and `builtin`. Archive, remote, and builtin providers are
 asynchronous and require `callback = function(result, err) ... end`; the returned handle supports `cancel()`.
 `builtin` uses the official `minecraft-dev/templates` repository, while `remote` accepts any Git repository URL.
+Use `list_templates(options)` with the same provider options to discover descriptors before generation.
 
 Supported finalizers are `run_gradle_tasks`, `import_gradle_project`, `import_maven_project`, `add_gradle_run`,
 `add_maven_run`, and `git_add_all`. Import finalizers emit `User MinecraftDevProjectGenerated`; reusable run definitions

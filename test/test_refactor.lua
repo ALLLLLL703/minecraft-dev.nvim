@@ -134,6 +134,20 @@ final class Disabled {}
 	vim.fn.delete(destination, "rf")
 end
 
+local function test_custom_template_discovery()
+	local root = vim.fn.tempname()
+	vim.fn.mkdir(root .. "/nested", "p")
+	local template_fs = require("minecraft-dev.util.fs")
+	template_fs.write_file(root .. "/.mcdev.template.json", vim.json.encode({ version = 3, label = "Root", group = "mod" }))
+	template_fs.write_file(root .. "/nested/paper.mcdev.template.json", vim.json.encode({ version = 3, label = "Paper", group = "plugin" }))
+	local templates, err = custom_templates.list({ provider = "local", source = root })
+	assert_equal(err, nil, "local template discovery should not return an error")
+	assert_equal(#templates, 2, "template discovery should find default and named descriptors")
+	assert_equal(templates[1].label, "Root", "template discovery should preserve labels")
+	assert_equal(templates[2].descriptor, "nested/paper.mcdev.template.json", "template discovery should return relative descriptor path")
+	vim.fn.delete(root, "rf")
+end
+
 local function test_custom_velocity_directives()
 	local rendered = custom_evaluator.render({ ENABLED = false, FALLBACK = true, ITEMS = { "a", "b" } }, [[#set ($PREFIX = "item")
 #if ($ENABLED)
@@ -663,6 +677,7 @@ local function run()
 	test_platform_registry()
 	test_architectury_generation()
 	test_custom_v3_local_template()
+	test_custom_template_discovery()
 	test_custom_velocity_directives()
 	test_custom_archive_provider()
 	test_custom_remote_provider()

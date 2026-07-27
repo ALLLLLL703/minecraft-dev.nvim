@@ -27,6 +27,12 @@ function M.generate_template(options)
 	return require("minecraft-dev.custom").generate(options)
 end
 
+---@param options table
+---@return table?, table?
+function M.list_templates(options)
+	return require("minecraft-dev.custom").list(options)
+end
+
 function M.reload()
 	local cur_config = vim.deepcopy(M.config)
 	local notify = require("minecraft-dev.util.notify")
