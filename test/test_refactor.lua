@@ -34,13 +34,101 @@ local function test_command_parse_failure()
 end
 
 local function test_platform_registry()
-	assert_equal(platforms.names(), { "fabric", "paper" }, "registry should expose implemented platforms in stable order")
+	assert_equal(
+		platforms.names(),
+		{ "fabric", "paper", "spigot" },
+		"registry should expose implemented platforms in stable order"
+	)
 	assert_equal(platforms.build_systems("fabric"), { "gradle" }, "Fabric should only advertise supported builds")
 	assert_equal(
 		platforms.build_systems("paper"),
 		{ "gradle", "maven" },
 		"Paper should advertise Gradle and Maven"
 	)
+end
+
+local function read_file(path)
+	return table.concat(vim.fn.readfile(path), "\n")
+end
+
+local function test_spigot_maven_generation()
+	local directory = vim.fn.tempname()
+	vim.fn.mkdir(directory, "p")
+	local ok, err = project.generate({
+		platform = "spigot",
+		build_system = "maven",
+		minecraft_version = "1.21.8",
+		directory = directory,
+		group_id = "com.example",
+		artifact_id = "example",
+		package_name = "com.example.example",
+		main_class = "ExamplePlugin",
+		language = "java",
+		plugin_version = "2.1.0",
+		description = "Example plugin",
+		authors = { "Alice", "Bob" },
+		website = "https://example.com",
+		prefix = "Example",
+		load = "STARTUP",
+		load_before = { "BeforeMe" },
+		depend = { "RequiredPlugin" },
+		soft_depend = { "OptionalPlugin" },
+	})
+	assert_equal(ok, true, "public API should generate a Spigot project")
+	assert_equal(err, nil, "successful Spigot generation should not return an error")
+
+	local pom = read_file(directory .. "/pom.xml")
+	assert_truthy(pom:match("org%.spigotmc") ~= nil, "Spigot Maven project should use the Spigot group")
+	assert_truthy(pom:match("spigot%-api") ~= nil, "Spigot Maven project should depend on spigot-api")
+	assert_truthy(pom:match("hub%.spigotmc%.org") ~= nil, "Spigot Maven project should use the Spigot repository")
+
+	local manifest = read_file(directory .. "/src/main/resources/plugin.yml")
+	assert_truthy(manifest:match('version: "2%.1%.0"') ~= nil, "manifest should use the requested plugin version")
+	assert_truthy(manifest:match('description: "Example plugin"') ~= nil, "manifest should include description")
+	assert_truthy(manifest:match('authors: %[%"Alice%",%"Bob%"%]') ~= nil, "manifest should include authors")
+	assert_truthy(manifest:match('load: "STARTUP"') ~= nil, "manifest should include non-default load order")
+	assert_truthy(manifest:match('depend: %[%"RequiredPlugin%"%]') ~= nil, "manifest should include hard dependencies")
+	assert_truthy(manifest:match('softdepend: %[%"OptionalPlugin%"%]') ~= nil, "manifest should include soft dependencies")
+	vim.fn.delete(directory, "rf")
+end
+
+local function test_paper_manifest_generation()
+	local directory = vim.fn.tempname()
+	vim.fn.mkdir(directory, "p")
+	local ok, err = project.generate({
+		platform = "paper",
+		build_system = "maven",
+		minecraft_version = "1.21.8",
+		directory = directory,
+		group_id = "com.example",
+		artifact_id = "example",
+		package_name = "com.example.example",
+		main_class = "ExamplePlugin",
+		language = "java",
+		paper_manifest = true,
+		depend = { "RequiredPlugin" },
+		soft_depend = { "OptionalPlugin" },
+	})
+	assert_equal(ok, true, "Paper manifest option should generate a project")
+	assert_equal(err, nil, "Paper manifest generation should not return an error")
+	assert_equal(
+		vim.fn.filereadable(directory .. "/src/main/resources/paper-plugin.yml"),
+		1,
+		"Paper manifest option should write paper-plugin.yml"
+	)
+	assert_equal(
+		vim.fn.filereadable(directory .. "/src/main/resources/plugin.yml"),
+		0,
+		"Paper manifest option should not also write plugin.yml"
+	)
+	local manifest = read_file(directory .. "/src/main/resources/paper-plugin.yml")
+	assert_truthy(manifest:match("dependencies:") ~= nil, "Paper manifest should contain dependency sections")
+	assert_truthy(manifest:match("server:") ~= nil, "Paper manifest dependencies should target server phase")
+	assert_truthy(manifest:match('"RequiredPlugin":') ~= nil, "Paper manifest should include required plugin")
+	assert_truthy(manifest:match('required: true') ~= nil, "hard dependency should be required")
+	assert_truthy(manifest:match('"OptionalPlugin":') ~= nil, "Paper manifest should include optional plugin")
+	assert_truthy(manifest:match('required: false') ~= nil, "soft dependency should be optional")
+	vim.fn.delete(directory, "rf")
 end
 
 local function test_project_validation()
@@ -236,6 +324,8 @@ local function run()
 	test_command_parse_success()
 	test_command_parse_failure()
 	test_platform_registry()
+	test_spigot_maven_generation()
+	test_paper_manifest_generation()
 	test_project_validation()
 	test_noninteractive_paper_generation()
 	test_noninteractive_fabric_generation()

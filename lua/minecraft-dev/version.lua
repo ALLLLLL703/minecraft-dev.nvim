@@ -16,4 +16,19 @@ function M.resolve_family(mc_version)
 		return "v1_8"
 	end
 end
+
+---@param version string
+---@param expected_major integer
+---@param expected_minor integer
+---@return boolean
+function M.at_least(version, expected_major, expected_minor)
+	local major, minor = version:match("^(%d+)%.(%d+)")
+	major = tonumber(major)
+	minor = tonumber(minor)
+	if not major or not minor then
+		return false
+	end
+	return major > expected_major or (major == expected_major and minor >= expected_minor)
+end
+
 return M

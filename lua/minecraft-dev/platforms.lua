@@ -9,6 +9,10 @@ local registry = {
 		build_systems = { "gradle", "maven" },
 		generator = "minecraft-dev.generators.paper",
 	},
+	spigot = {
+		build_systems = { "gradle", "maven" },
+		generator = "minecraft-dev.generators.paper",
+	},
 }
 
 ---@return string[]

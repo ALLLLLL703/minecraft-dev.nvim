@@ -5,6 +5,7 @@ local path_util = require("minecraft-dev.util.path")
 local templates = require("minecraft-dev.generators.paper.templates")
 local version_util = require("minecraft-dev.version")
 local options = require("minecraft-dev.generators.paper.options")
+local bukkit_platform = require("minecraft-dev.generators.bukkit.platform")
 
 local M = {}
 
@@ -65,12 +66,14 @@ function M.generate_higher(project_path, version, language, spec)
 	fs.mkdir(resources_dir)
 
 	local pom_template = templates.read("maven", "v1_13_plus/pom.xml", lang)
+	pom_template = bukkit_platform.transform_maven(pom_template, spec and spec.platform or "paper", ctx.version)
 	local pom_content = string.format(pom_template, ctx.groupId, ctx.artifactId, ctx.artifactId, ctx.version)
 	fs.write_file(path_util.join(path, "pom.xml"), pom_content)
 
-	local plugin_template = templates.read("maven", "v1_13_plus/plugin.yml")
-	local plugin_content = string.format(plugin_template, ctx.artifactId, ctx.package, ctx.main, ctx.version)
-	fs.write_file(path_util.join(resources_dir, "plugin.yml"), plugin_content)
+	fs.write_file(
+		path_util.join(resources_dir, bukkit_platform.manifest_name(spec)),
+		bukkit_platform.build_manifest(ctx, spec)
+	)
 
 	write_main(ctx, lang, "v1_13_plus/Main.java", src_dir)
 
@@ -96,12 +99,14 @@ function M.generate_lower(project_path, version, language, spec)
 	fs.mkdir(resources_dir)
 
 	local pom_template = templates.read("maven", "v1_8/pom.xml", lang)
+	pom_template = bukkit_platform.transform_maven(pom_template, spec and spec.platform or "paper", ctx.version)
 	local pom_content = string.format(pom_template, ctx.groupId, ctx.artifactId, ctx.artifactId, ctx.version)
 	fs.write_file(path_util.join(path, "pom.xml"), pom_content)
 
-	local plugin_template = templates.read("maven", "v1_8/plugin.yml")
-	local plugin_content = string.format(plugin_template, ctx.artifactId, ctx.package, ctx.main, ctx.version)
-	fs.write_file(path_util.join(resources_dir, "plugin.yml"), plugin_content)
+	fs.write_file(
+		path_util.join(resources_dir, bukkit_platform.manifest_name(spec)),
+		bukkit_platform.build_manifest(ctx, spec)
+	)
 
 	write_main(ctx, lang, "v1_8/Main.java", src_dir)
 

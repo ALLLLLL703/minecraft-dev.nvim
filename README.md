@@ -7,6 +7,8 @@ Now can using to generate
 - fabric java mod
 - paper kotlin plugin
 - paper java plugin
+- spigot kotlin plugin
+- spigot java plugin
 
 
 <!-- TOC -->
@@ -78,6 +80,28 @@ When generating a Fabric project, the plugin now asks for:
 If you cancel a selection with `Esc`, the configured default is used.
 
 When generating a Paper project, the plugin asks for `java` or `kotlin` and uses `defaults.paper.language` when cancelled.
+
+### Lua API
+
+Use the non-interactive API when another plugin or script already has the complete project specification:
+
+```lua
+local ok, err = require("minecraft-dev").generate({
+  platform = "paper", -- paper, spigot, or fabric
+  build_system = "gradle",
+  minecraft_version = "1.21.8",
+  directory = "/tmp/example",
+  group_id = "com.example",
+  artifact_id = "example",
+  package_name = "com.example.example",
+  main_class = "ExamplePlugin",
+  language = "java",
+})
+```
+
+Paper and Spigot specifications also accept `plugin_name`, `plugin_version`, `description`, `authors`, `website`,
+`prefix`, `load`, `load_before`, `depend`, and `soft_depend`. Set `paper_manifest = true` to generate the experimental
+`paper-plugin.yml` format and its structured server dependencies.
 
 ## Contribute
 
