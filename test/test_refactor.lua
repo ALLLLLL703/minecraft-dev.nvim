@@ -367,7 +367,7 @@ local function test_additional_plugin_platforms()
 	local expectations = {
 		bungeecord = { dependency = "bungeecord-api", metadata = "src/main/resources/bungee.yml" },
 		waterfall = { dependency = "waterfall-api", metadata = "src/main/resources/bungee.yml" },
-		velocity = { dependency = "velocity-api", source_marker = "@Plugin" },
+		velocity = { dependency = "velocity-api", pom_marker = "annotationProcessorPaths", source_marker = "@Plugin" },
 		sponge = { dependency = "spongeapi", metadata = "src/main/resources/META-INF/sponge_plugins.json" },
 	}
 	for platform, expectation in pairs(expectations) do
@@ -391,6 +391,10 @@ local function test_additional_plugin_platforms()
 		assert_equal(err, nil, platform .. " Maven generation should not return an error")
 		local pom = read_file(directory .. "/pom.xml")
 		assert_truthy(pom:find(expectation.dependency, 1, true) ~= nil, platform .. " should use its API dependency")
+		assert_truthy(pom:find("\\n", 1, true) == nil, platform .. " POM should not contain escaped newlines")
+		if expectation.pom_marker then
+			assert_truthy(pom:find(expectation.pom_marker, 1, true) ~= nil, platform .. " POM should configure annotation processing")
+		end
 		if expectation.metadata then
 			assert_equal(vim.fn.filereadable(directory .. "/" .. expectation.metadata), 1, platform .. " metadata should exist")
 		end

@@ -52,23 +52,24 @@ local function build_maven(ctx, spec, definition)
 	end
 	local processor = ""
 	if definition.kind == "velocity" then
-		processor = string.format([[\n    <dependency>
-      <groupId>%s</groupId><artifactId>%s</artifactId><version>%s</version><scope>provided</scope><type>processor</type>
-    </dependency>]], group, artifact, dependency_version)
+		processor = string.format([[
+		<configuration><annotationProcessorPaths><path>
+			<groupId>%s</groupId><artifactId>%s</artifactId><version>%s</version>
+		</path></annotationProcessorPaths></configuration>]], group, artifact, dependency_version)
 	end
 	return string.format([[<project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
   <groupId>%s</groupId><artifactId>%s</artifactId><version>%s</version>
   <properties><maven.compiler.release>21</maven.compiler.release><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
   <build>%s<plugins>
-      <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>%s
+		<plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version>%s</plugin>%s
     </plugins></build>
   <repositories><repository><id>platform</id><url>%s</url></repository></repositories>
   <dependencies>
-    <dependency><groupId>%s</groupId><artifactId>%s</artifactId><version>%s</version><scope>provided</scope></dependency>%s
+		<dependency><groupId>%s</groupId><artifactId>%s</artifactId><version>%s</version><scope>provided</scope></dependency>
   </dependencies>
 </project>
-]], ctx.groupId, ctx.artifactId, spec.plugin_version or "1.0.0", source_directory, kotlin, definition.repository, group, artifact, dependency_version, processor)
+]], ctx.groupId, ctx.artifactId, spec.plugin_version or "1.0.0", source_directory, processor, kotlin, definition.repository, group, artifact, dependency_version)
 end
 
 local function build_gradle(ctx, spec, definition)
