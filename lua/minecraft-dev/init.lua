@@ -14,6 +14,13 @@ function M.generate(spec)
 	return require("minecraft-dev.project").generate(spec)
 end
 
+---@param spec table
+---@param callback fun(ok: boolean?, err: table?)
+---@return table?, table?
+function M.generate_async(spec, callback)
+	return require("minecraft-dev.project").generate_async(spec, callback)
+end
+
 ---@param options table
 ---@return table?, table?
 function M.generate_template(options)

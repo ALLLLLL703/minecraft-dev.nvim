@@ -6,6 +6,7 @@ local platforms = require("minecraft-dev.platforms")
 local project = require("minecraft-dev.project")
 local custom_templates = require("minecraft-dev.custom")
 local custom_evaluator = require("minecraft-dev.custom.evaluator")
+local fabric_version_data = require("minecraft-dev.generators.fabric.version_data")
 
 local function assert_equal(actual, expected, message)
 	if not vim.deep_equal(actual, expected) then
@@ -294,6 +295,17 @@ local function test_custom_run_config_finalizers()
 	assert_equal(runs[2].args, { "package" }, "Maven run finalizer should persist goals")
 	vim.fn.delete(template_root, "rf")
 	vim.fn.delete(destination, "rf")
+end
+
+local function test_fabric_online_version_parser()
+	local parsed = fabric_version_data.parse_responses(
+		vim.json.encode({ { loader = { version = "0.19.3", stable = true } } }),
+		vim.json.encode({ { version = "1.21.1+build.3" } }),
+		vim.json.encode({ { version_number = "0.116.14+1.21.1" } })
+	)
+	assert_equal(parsed.loader, "0.19.3", "online parser should select loader version")
+	assert_equal(parsed.yarn, "1.21.1+build.3", "online parser should select latest Yarn mapping")
+	assert_equal(parsed.fabric_api, "0.116.14+1.21.1", "online parser should select latest Fabric API")
 end
 
 local function test_forge_family_generation()
@@ -650,6 +662,7 @@ local function run()
 	test_custom_remote_provider()
 	test_custom_property_derivations()
 	test_custom_run_config_finalizers()
+	test_fabric_online_version_parser()
 	test_forge_family_generation()
 	test_additional_plugin_platforms()
 	test_spigot_maven_generation()

@@ -104,4 +104,22 @@ function M.generate(spec)
 	return true, nil
 end
 
+---@param spec table
+---@param callback fun(ok: boolean?, err: table?)
+---@return table?, table?
+function M.generate_async(spec, callback)
+	local normalized, err = M.validate(spec)
+	if not normalized then callback(nil, err) return nil, err end
+	if normalized.platform ~= "fabric" then
+		local ok, generation_error = M.generate(normalized)
+		callback(ok, generation_error)
+		return nil, generation_error
+	end
+	return require("minecraft-dev.generators.fabric.version_data").resolve(normalized.minecraft_version, function(data, fetch_error)
+		normalized.fabric_version_data = data
+		local ok, generation_error = M.generate(normalized)
+		callback(ok, generation_error or fetch_error)
+	end)
+end
+
 return M

@@ -142,6 +142,10 @@ Supported finalizers are `run_gradle_tasks`, `import_gradle_project`, `import_ma
 `add_maven_run`, and `git_add_all`. Import finalizers emit `User MinecraftDevProjectGenerated`; reusable run definitions
 are written to `.nvim/minecraft-dev-runs.json`. External commands remain asynchronous.
 
+Use `generate_async(spec, callback)` for Fabric projects to refresh Loader and Yarn versions from Fabric Meta and the
+Fabric API version from Modrinth before generation. Successful responses are cached under Neovim's cache directory;
+network or response failures fall back to bundled version data.
+
 ## Contribute
 
 if you are interested with minecraft dev in Neovim and wants the template setup like MinecraftDev in intellij-idea

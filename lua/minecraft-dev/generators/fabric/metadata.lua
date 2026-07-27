@@ -6,6 +6,7 @@ local M = {}
 ---@field generate_datagen boolean
 ---@field use_mixins boolean
 ---@field loom_version? string
+---@field version_data? FabricVersionData
 
 ---@param side "client"|"server"|"both"
 ---@return string

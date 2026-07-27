@@ -39,6 +39,7 @@ function M.generate(project_path, version, spec)
 				or spec.generate_datagen,
 			use_mixins = spec.use_mixins == nil and config.defaults.fabric.use_mixins or spec.use_mixins,
 			loom_version = spec.loom_version,
+			version_data = spec.fabric_version_data,
 		})
 		return
 	end
@@ -49,7 +50,7 @@ end
 ---@param generator_options FabricGenerationOptions
 local function generate_basic(ctx, generator_options)
 	local config = require("minecraft-dev").config
-	local json_data_table = version_data.read(ctx.version)
+	local json_data_table = generator_options.version_data or version_data.read(ctx.version)
 	local resources_dir = path_util.join(ctx.path, "src/main/resources")
 	fs.mkdir(resources_dir)
 	if generator_options.side ~= "server" or generator_options.generate_datagen then
