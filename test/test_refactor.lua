@@ -148,6 +148,87 @@ wrong
 	assert_equal(rendered, "item:a\nitem:b\n", "Velocity set, elseif, and foreach directives should render")
 end
 
+local function test_custom_archive_provider()
+	if vim.fn.executable("zip") ~= 1 or vim.fn.executable("unzip") ~= 1 then return end
+	local template_root = vim.fn.tempname()
+	local destination = vim.fn.tempname()
+	local archive = vim.fn.tempname() .. ".zip"
+	vim.fn.mkdir(template_root, "p")
+	vim.fn.mkdir(destination, "p")
+	local template_fs = require("minecraft-dev.util.fs")
+	template_fs.write_file(template_root .. "/hello.ft", "hello ${NAME}\n")
+	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		properties = { { name = "NAME", type = "string", default = "world" } },
+		files = { { template = "hello.ft", destination = "hello.txt" } },
+	}))
+	assert_equal(vim.system({ "zip", "-qr", archive, "." }, { cwd = template_root }):wait().code, 0, "archive fixture should be created")
+	local completed = false
+	local result
+	local generation_error
+	local handle, start_error = custom_templates.generate({
+		provider = "archive",
+		source = archive,
+		directory = destination,
+		properties = { NAME = "archive" },
+		callback = function(value, err)
+			result = value
+			generation_error = err
+			completed = true
+		end,
+	})
+	assert_truthy(handle ~= nil, "archive provider should return an async handle")
+	assert_equal(start_error, nil, "archive provider should start without an error")
+	assert_truthy(vim.wait(5000, function() return completed end, 20), "archive provider should complete asynchronously")
+	assert_truthy(result ~= nil, "archive provider should generate files")
+	assert_equal(generation_error, nil, "archive provider should not return an error")
+	assert_equal(read_file(destination .. "/hello.txt"), "hello archive", "archive template should render")
+	vim.fn.delete(template_root, "rf")
+	vim.fn.delete(destination, "rf")
+	vim.fn.delete(archive)
+end
+
+local function test_custom_remote_provider()
+	if vim.fn.executable("git") ~= 1 then return end
+	local repository = vim.fn.tempname()
+	local destination = vim.fn.tempname()
+	vim.fn.mkdir(repository, "p")
+	vim.fn.mkdir(destination, "p")
+	local template_fs = require("minecraft-dev.util.fs")
+	template_fs.write_file(repository .. "/remote.ft", "remote ${NAME}\n")
+	template_fs.write_file(repository .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		properties = { { name = "NAME", type = "string", default = "template" } },
+		files = { { template = "remote.ft", destination = "remote.txt" } },
+	}))
+	assert_equal(vim.system({ "git", "init", "-q" }, { cwd = repository }):wait().code, 0, "remote fixture should initialize")
+	assert_equal(vim.system({ "git", "add", "." }, { cwd = repository }):wait().code, 0, "remote fixture should stage")
+	assert_equal(vim.system({ "git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "fixture" }, { cwd = repository }):wait().code, 0, "remote fixture should commit")
+	local source = "file://" .. repository
+	local completed = false
+	local result
+	local generation_error
+	local handle, start_error = custom_templates.generate({
+		provider = "remote",
+		source = source,
+		directory = destination,
+		properties = { NAME = "provider" },
+		callback = function(value, err)
+			result, generation_error, completed = value, err, true
+		end,
+	})
+	assert_truthy(handle ~= nil, "remote provider should return an async handle")
+	assert_equal(start_error, nil, "remote provider should start without an error")
+	assert_truthy(vim.wait(5000, function() return completed end, 20), "remote provider should complete asynchronously")
+	assert_truthy(result ~= nil, "remote provider should generate files")
+	assert_equal(generation_error, nil, "remote provider should not return an error")
+	assert_equal(read_file(destination .. "/remote.txt"), "remote provider", "remote template should render")
+	local cache = vim.fs.joinpath(vim.fn.stdpath("cache"), "minecraft-dev", "templates", vim.fn.sha256(source))
+	vim.fn.delete(cache, "rf")
+	vim.fn.delete(repository, "rf")
+	vim.fn.delete(destination, "rf")
+end
+
 local function test_forge_family_generation()
 	local gradle = require("minecraft-dev.util.gradle")
 	local original_generate_gradlew = gradle.generate_gradlew
@@ -498,6 +579,8 @@ local function run()
 	test_architectury_generation()
 	test_custom_v3_local_template()
 	test_custom_velocity_directives()
+	test_custom_archive_provider()
+	test_custom_remote_provider()
 	test_forge_family_generation()
 	test_additional_plugin_platforms()
 	test_spigot_maven_generation()

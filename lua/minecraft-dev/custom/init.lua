@@ -50,13 +50,8 @@ local function collect_properties(descriptor, provided)
 	return properties
 end
 
----@param options table
----@return table?, table?
-function M.generate(options)
-	if type(options) ~= "table" or options.provider ~= "local" then
-		return nil, { code = "unsupported_provider" }
-	end
-	local root = vim.fs.normalize(options.source)
+local function generate_from_root(options, root)
+	root = vim.fs.normalize(root)
 	local descriptor_path = options.descriptor and path.join(root, options.descriptor) or path.join(root, ".mcdev.template.json")
 	if not inside(root, descriptor_path) then return nil, { code = "unsafe_descriptor_path" } end
 	local descriptor_content = read_file(descriptor_path)
@@ -88,6 +83,25 @@ function M.generate(options)
 		end
 	end
 	return { files = generated, descriptor = descriptor, properties = properties }, nil
+end
+
+---@param options table
+---@return table?, table?
+function M.generate(options)
+	if type(options) ~= "table" then return nil, { code = "invalid_options" } end
+	if options.provider == "local" then
+		return generate_from_root(options, options.source)
+	end
+	if type(options.callback) ~= "function" then return nil, { code = "callback_required" } end
+	return require("minecraft-dev.custom.providers").prepare(options, function(root, provider_error, cleanup)
+		if provider_error then
+			options.callback(nil, provider_error)
+			return
+		end
+		local result, generation_error = generate_from_root(options, root)
+		if cleanup then cleanup() end
+		options.callback(result, generation_error)
+	end)
 end
 
 return M

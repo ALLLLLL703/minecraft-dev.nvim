@@ -97,10 +97,11 @@ function M.interpolate(properties, content)
 		local value = resolve(properties, reference)
 		return value == nil and "" or tostring(value)
 	end)
-	return content:gsub("%$([%a_][%w_%.]*)", function(reference)
+	content = content:gsub("%$([%a_][%w_%.]*)", function(reference)
 		local value = resolve(properties, reference)
 		return value == nil and "$" .. reference or tostring(value)
 	end)
+	return content
 end
 
 local function parse_lines(content)
