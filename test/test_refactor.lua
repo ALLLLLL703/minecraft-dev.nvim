@@ -58,13 +58,14 @@ end
 local function test_architectury_generation()
 	local gradle = require("minecraft-dev.util.gradle")
 	local original_generate_gradlew = gradle.generate_gradlew
-	gradle.generate_gradlew = function() end
+	local wrapper_version
+	gradle.generate_gradlew = function(_, _, version) wrapper_version = version end
 	local directory = vim.fn.tempname()
 	vim.fn.mkdir(directory, "p")
 	local ok, err = project.generate({
 		platform = "architectury",
 		build_system = "gradle",
-		minecraft_version = "1.21.1",
+		minecraft_version = "1.20.1",
 		directory = directory,
 		group_id = "com.example",
 		artifact_id = "examplemod",
@@ -73,15 +74,23 @@ local function test_architectury_generation()
 		language = "java",
 		plugin_version = "1.0.0",
 		fabric_loader_version = "0.16.14",
-		fabric_api_version = "0.116.0+1.21.1",
-		forge_version = "52.1.0",
-		architectury_api_version = "13.0.8",
+		fabric_api_version = "0.92.6+1.20.1",
+		forge_version = "47.4.0",
+		architectury_api_version = "9.2.14",
 	})
 	gradle.generate_gradlew = original_generate_gradlew
 	assert_equal(ok, true, "Architectury generation should succeed")
 	assert_equal(err, nil, "Architectury generation should not return an error")
+	assert_equal(wrapper_version, "8.10.1", "Architectury should use a Loom-compatible Gradle version")
 	for _, module in ipairs({ "common", "fabric", "forge" }) do
 		assert_equal(vim.fn.filereadable(directory .. "/" .. module .. "/build.gradle"), 1, module .. " build should exist")
+	end
+	assert_equal(vim.fn.filereadable(directory .. "/forge/gradle.properties"), 1, "Forge module should declare its Loom platform")
+	assert_truthy(read_file(directory .. "/forge/gradle.properties"):find("loom.platform=forge", 1, true) ~= nil, "Forge module should select Forge Loom")
+	for _, module in ipairs({ "fabric", "forge" }) do
+		local build = read_file(directory .. "/" .. module .. "/build.gradle")
+		assert_truthy(build:find("compileClasspath.extendsFrom common", 1, true) ~= nil, module .. " should compile against common sources")
+		assert_truthy(build:find("shadowCommon(project", 1, true) ~= nil, module .. " should bundle transformed common sources")
 	end
 	local settings = read_file(directory .. "/settings.gradle")
 	assert_truthy(settings:find("common", 1, true) ~= nil, "settings should include common module")
@@ -411,13 +420,13 @@ local function test_gradle_wrapper_generation_isolated_from_project()
 	local directory = vim.fn.tempname()
 	vim.fn.mkdir(directory, "p")
 	local function fake_system(command, options, callback)
-		assert_equal(command, { "gradle", "wrapper", "--gradle-version", "8.10.2" }, "wrapper should use the compatible Gradle version")
+		assert_equal(command, { "gradle", "wrapper", "--gradle-version", "8.12.1" }, "wrapper should use the compatible Gradle version")
 		assert_truthy(options.cwd ~= directory, "wrapper should be generated outside the target project")
 		vim.fn.mkdir(options.cwd .. "/gradle/wrapper", "p")
 		vim.fn.writefile({ "#!/bin/sh" }, options.cwd .. "/gradlew")
 		vim.fn.writefile({}, options.cwd .. "/gradlew.bat")
 		vim.fn.writefile({}, options.cwd .. "/gradle/wrapper/gradle-wrapper.jar")
-		vim.fn.writefile({ "distributionUrl=gradle-8.10.2-bin.zip" }, options.cwd .. "/gradle/wrapper/gradle-wrapper.properties")
+		vim.fn.writefile({ "distributionUrl=gradle-8.12.1-bin.zip" }, options.cwd .. "/gradle/wrapper/gradle-wrapper.properties")
 		callback({ code = 0, stderr = "" })
 	end
 
@@ -692,6 +701,9 @@ local function test_fabric_metadata_mixins()
 
 	assert_truthy(mixins_json:match('"client"') ~= nil, "client mixin config should use client bucket")
 	assert_truthy(mixins_json:match('"MainMixin"') ~= nil, "mixin config should include generated class name")
+	assert_equal(metadata.mixin_target_class(ctx, { side = "client" }), "net.minecraft.client.Minecraft", "client mixin should use Mojmap class names")
+	assert_equal(metadata.mixin_target_class(ctx, { side = "server" }), "net.minecraft.server.MinecraftServer", "server mixin should use Mojmap class names")
+	assert_equal(metadata.mixin_target_class(ctx, { side = "both" }), "net.minecraft.world.entity.Entity", "common mixin should use Mojmap class names")
 	assert_equal(metadata.main_class_name(ctx, { language = "java" }), "Main", "java main class should stay capitalized")
 	assert_equal(metadata.client_class_name(ctx, { language = "java" }), "MainClient", "java client class should derive from main class")
 end

@@ -1,7 +1,7 @@
 local M = {}
 local notify = require("minecraft-dev.util.notify")
 
-local WRAPPER_VERSION = "8.10.2"
+local WRAPPER_VERSION = "8.12.1"
 local WRAPPER_FILES = {
 	"gradlew",
 	"gradlew.bat",
@@ -21,7 +21,8 @@ end
 
 ---@param project_path string
 ---@param system? fun(command: string[], options: table, callback: fun(result: table))
-function M.generate_gradlew(project_path, system)
+---@param wrapper_version? string
+function M.generate_gradlew(project_path, system, wrapper_version)
 	if vim.fn.executable("gradle") ~= 1 then
 		notify.notify(vim.log.levels.ERROR, { "gradle", "missing" })
 		return
@@ -33,7 +34,7 @@ function M.generate_gradlew(project_path, system)
 	vim.fn.writefile({}, wrapper_project .. "/settings.gradle")
 	local run_system = system or vim.system
 
-	run_system({ "gradle", "wrapper", "--gradle-version", WRAPPER_VERSION }, { cwd = wrapper_project }, function(result)
+	run_system({ "gradle", "wrapper", "--gradle-version", wrapper_version or WRAPPER_VERSION }, { cwd = wrapper_project }, function(result)
 		vim.schedule(function()
 			if result.code ~= 0 then
 				vim.fn.delete(wrapper_project, "rf")

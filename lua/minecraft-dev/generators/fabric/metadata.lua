@@ -172,12 +172,12 @@ end
 ---@return string
 function M.mixin_target_class(ctx, options)
 	if options.side == "client" then
-		return "net.minecraft.client.MinecraftClient"
+		return "net.minecraft.client.Minecraft"
 	elseif options.side == "server" then
 		return "net.minecraft.server.MinecraftServer"
 	end
 
-	return "net.minecraft.entity.Entity"
+	return "net.minecraft.world.entity.Entity"
 end
 
 ---@param ctx ProjectContext

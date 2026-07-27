@@ -16,7 +16,7 @@ end
 local function root_build(spec)
 	return string.format([[plugins {
     id 'architectury-plugin' version '3.4-SNAPSHOT'
-    id 'dev.architectury.loom' version '1.10-SNAPSHOT' apply false
+	id 'dev.architectury.loom' version '1.6-SNAPSHOT' apply false
 }
 architectury { minecraft = %s }
 allprojects {
@@ -45,26 +45,46 @@ dependencies {
 end
 
 local function fabric_build(spec)
-	return string.format([[architectury { platformSetupLoomIde(); fabric() }
-configurations { common; shadowBundle }
+	return string.format([[plugins { id 'com.github.johnrengelman.shadow' version '7.1.2' }
+architectury { platformSetupLoomIde(); fabric() }
+configurations {
+	common
+	compileClasspath.extendsFrom common
+	runtimeClasspath.extendsFrom common
+	developmentFabric.extendsFrom common
+	shadowCommon
+}
 dependencies {
     modImplementation 'net.fabricmc:fabric-loader:%s'
     modApi 'net.fabricmc.fabric-api:fabric-api:%s'
-    modApi 'dev.architectury:architectury-fabric:%s'
-    common project(path: ':common', configuration: 'namedElements')
+	modApi 'dev.architectury:architectury-fabric:%s'
+	common(project(path: ':common', configuration: 'namedElements')) { transitive false }
+	shadowCommon(project(path: ':common', configuration: 'transformProductionFabric')) { transitive false }
 }
+shadowJar { configurations = [project.configurations.shadowCommon]; archiveClassifier = 'dev-shadow' }
+remapJar { inputFile.set(shadowJar.archiveFile); dependsOn shadowJar; archiveClassifier = null }
 ]], spec.fabric_loader_version, spec.fabric_api_version, spec.architectury_api_version)
 end
 
 local function forge_build(spec)
-	return string.format([[loom { forge { } }
+	return string.format([[plugins { id 'com.github.johnrengelman.shadow' version '7.1.2' }
+loom { forge { } }
 architectury { platformSetupLoomIde(); forge() }
-configurations { common; shadowBundle }
+configurations {
+	common
+	compileClasspath.extendsFrom common
+	runtimeClasspath.extendsFrom common
+	developmentForge.extendsFrom common
+	shadowCommon
+}
 dependencies {
     forge 'net.minecraftforge:forge:%s-%s'
-    modApi 'dev.architectury:architectury-forge:%s'
-    common project(path: ':common', configuration: 'namedElements')
+	modApi 'dev.architectury:architectury-forge:%s'
+	common(project(path: ':common', configuration: 'namedElements')) { transitive false }
+	shadowCommon(project(path: ':common', configuration: 'transformProductionForge')) { transitive false }
 }
+shadowJar { configurations = [project.configurations.shadowCommon]; archiveClassifier = 'dev-shadow' }
+remapJar { inputFile.set(shadowJar.archiveFile); dependsOn shadowJar; archiveClassifier = null }
 ]], spec.minecraft_version, spec.forge_version, spec.architectury_api_version)
 end
 
@@ -108,12 +128,13 @@ function M.run(_, project_path, _, spec)
 	write(root, "common/build.gradle", common_build(spec))
 	write(root, "fabric/build.gradle", fabric_build(spec))
 	write(root, "forge/build.gradle", forge_build(spec))
+	write(root, "forge/gradle.properties", "loom.platform=forge\n")
 	write(root, "common/src/main/java/" .. package_path .. "/" .. spec.main_class .. ".java", string.format("package %s;\n\npublic final class %s {\n    public static void init() { }\n}\n", spec.package_name, spec.main_class))
 	write(root, "fabric/src/main/java/" .. package_path .. "/fabric/" .. spec.main_class .. "Fabric.java", string.format("package %s.fabric;\n\nimport net.fabricmc.api.ModInitializer;\nimport %s.%s;\n\npublic final class %sFabric implements ModInitializer {\n    @Override public void onInitialize() { %s.init(); }\n}\n", spec.package_name, spec.package_name, spec.main_class, spec.main_class, spec.main_class))
 	write(root, "forge/src/main/java/" .. package_path .. "/forge/" .. spec.main_class .. "Forge.java", string.format("package %s.forge;\n\nimport net.minecraftforge.fml.common.Mod;\nimport %s.%s;\n\n@Mod(%s)\npublic final class %sForge {\n    public %sForge() { %s.init(); }\n}\n", spec.package_name, spec.package_name, spec.main_class, quote(spec.artifact_id), spec.main_class, spec.main_class, spec.main_class))
 	write(root, "fabric/src/main/resources/fabric.mod.json", fabric_metadata(spec))
 	write(root, "forge/src/main/resources/META-INF/mods.toml", forge_metadata(spec))
-	gradle.generate_gradlew(root)
+	gradle.generate_gradlew(root, nil, "8.10.1")
 	return true
 end
 
