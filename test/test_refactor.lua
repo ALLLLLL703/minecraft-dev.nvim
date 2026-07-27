@@ -40,7 +40,7 @@ end
 local function test_platform_registry()
 	assert_equal(
 		platforms.names(),
-		{ "bungeecord", "fabric", "paper", "spigot", "sponge", "velocity", "waterfall" },
+		{ "bungeecord", "fabric", "forge", "neoforge", "paper", "spigot", "sponge", "velocity", "waterfall" },
 		"registry should expose implemented platforms in stable order"
 	)
 	assert_equal(platforms.build_systems("fabric"), { "gradle" }, "Fabric should only advertise supported builds")
@@ -49,6 +49,41 @@ local function test_platform_registry()
 		{ "gradle", "maven" },
 		"Paper should advertise Gradle and Maven"
 	)
+end
+
+local function test_forge_family_generation()
+	local gradle = require("minecraft-dev.util.gradle")
+	local original_generate_gradlew = gradle.generate_gradlew
+	gradle.generate_gradlew = function() end
+	for _, platform in ipairs({ "forge", "neoforge" }) do
+		local directory = vim.fn.tempname()
+		vim.fn.mkdir(directory, "p")
+		local ok, err = project.generate({
+			platform = platform,
+			build_system = "gradle",
+			minecraft_version = "1.21.1",
+			loader_version = platform == "forge" and "52.1.0" or "21.1.209",
+			directory = directory,
+			group_id = "com.example",
+			artifact_id = "examplemod",
+			package_name = "com.example.examplemod",
+			main_class = "ExampleMod",
+			language = "java",
+			plugin_version = "1.0.0",
+			license = "MIT",
+			use_mixins = true,
+			parchment_version = "2024.11.17",
+		})
+		assert_equal(ok, true, platform .. " generation should succeed")
+		assert_equal(err, nil, platform .. " generation should not return an error")
+		local build = read_file(directory .. "/build.gradle")
+		assert_truthy(build:find("parchment", 1, true) ~= nil, platform .. " should honor Parchment mappings")
+		assert_equal(vim.fn.filereadable(directory .. "/src/main/resources/examplemod.mixins.json"), 1, platform .. " should generate mixin config")
+		local manifest = platform == "forge" and "mods.toml" or "neoforge.mods.toml"
+		assert_equal(vim.fn.filereadable(directory .. "/src/main/resources/META-INF/" .. manifest), 1, platform .. " manifest should exist")
+		vim.fn.delete(directory, "rf")
+	end
+	gradle.generate_gradlew = original_generate_gradlew
 end
 
 local function test_additional_plugin_platforms()
@@ -363,6 +398,7 @@ local function run()
 	test_command_parse_success()
 	test_command_parse_failure()
 	test_platform_registry()
+	test_forge_family_generation()
 	test_additional_plugin_platforms()
 	test_spigot_maven_generation()
 	test_paper_manifest_generation()

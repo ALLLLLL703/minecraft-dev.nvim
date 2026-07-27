@@ -9,6 +9,14 @@ local registry = {
 		build_systems = { "gradle" },
 		generator = "minecraft-dev.generators.fabric",
 	},
+	forge = {
+		build_systems = { "gradle" },
+		generator = "minecraft-dev.generators.forge",
+	},
+	neoforge = {
+		build_systems = { "gradle" },
+		generator = "minecraft-dev.generators.forge",
+	},
 	paper = {
 		build_systems = { "gradle", "maven" },
 		generator = "minecraft-dev.generators.paper",

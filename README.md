@@ -12,6 +12,7 @@ Now can using to generate
 - bungeecord and waterfall plugins
 - velocity plugins
 - sponge plugins
+- forge and neoforge mods
 
 
 <!-- TOC -->
@@ -105,6 +106,9 @@ local ok, err = require("minecraft-dev").generate({
 Paper and Spigot specifications also accept `plugin_name`, `plugin_version`, `description`, `authors`, `website`,
 `prefix`, `load`, `load_before`, `depend`, and `soft_depend`. Set `paper_manifest = true` to generate the experimental
 `paper-plugin.yml` format and its structured server dependencies.
+
+Forge and NeoForge use Gradle and require `loader_version`. They also accept `parchment_version`, `use_mixins`,
+`plugin_name`, `plugin_version`, `description`, and `license`.
 
 ## Contribute
 

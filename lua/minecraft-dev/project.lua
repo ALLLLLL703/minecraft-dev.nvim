@@ -64,6 +64,17 @@ function M.validate(spec)
 	if spec.language ~= "java" and spec.language ~= "kotlin" then
 		return nil, validation_error("unsupported_language", "language")
 	end
+	if spec.platform == "forge" or spec.platform == "neoforge" then
+		if spec.language ~= "java" then
+			return nil, validation_error("unsupported_language", "language")
+		end
+		if type(spec.loader_version) ~= "string" or spec.loader_version == "" then
+			return nil, validation_error("missing_field", "loader_version")
+		end
+		if not spec.artifact_id:match("^[a-z][a-z0-9_]+$") then
+			return nil, validation_error("invalid_mod_id", "artifact_id")
+		end
+	end
 
 	return vim.deepcopy(spec), nil
 end
