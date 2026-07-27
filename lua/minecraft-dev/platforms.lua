@@ -1,6 +1,10 @@
 local M = {}
 
 local registry = {
+	bungeecord = {
+		build_systems = { "gradle", "maven" },
+		generator = "minecraft-dev.generators.plugin",
+	},
 	fabric = {
 		build_systems = { "gradle" },
 		generator = "minecraft-dev.generators.fabric",
@@ -12,6 +16,18 @@ local registry = {
 	spigot = {
 		build_systems = { "gradle", "maven" },
 		generator = "minecraft-dev.generators.paper",
+	},
+	sponge = {
+		build_systems = { "gradle", "maven" },
+		generator = "minecraft-dev.generators.plugin",
+	},
+	velocity = {
+		build_systems = { "gradle", "maven" },
+		generator = "minecraft-dev.generators.plugin",
+	},
+	waterfall = {
+		build_systems = { "gradle", "maven" },
+		generator = "minecraft-dev.generators.plugin",
 	},
 }
 

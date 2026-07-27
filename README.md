@@ -9,6 +9,9 @@ Now can using to generate
 - paper java plugin
 - spigot kotlin plugin
 - spigot java plugin
+- bungeecord and waterfall plugins
+- velocity plugins
+- sponge plugins
 
 
 <!-- TOC -->
@@ -87,7 +90,7 @@ Use the non-interactive API when another plugin or script already has the comple
 
 ```lua
 local ok, err = require("minecraft-dev").generate({
-  platform = "paper", -- paper, spigot, or fabric
+  platform = "paper", -- paper, spigot, fabric, bungeecord, waterfall, velocity, or sponge
   build_system = "gradle",
   minecraft_version = "1.21.8",
   directory = "/tmp/example",

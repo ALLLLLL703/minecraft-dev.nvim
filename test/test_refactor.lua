@@ -33,10 +33,14 @@ local function test_command_parse_failure()
 	assert_equal(err, "invalid_args", "parse should report invalid args")
 end
 
+local function read_file(path)
+	return table.concat(vim.fn.readfile(path), "\n")
+end
+
 local function test_platform_registry()
 	assert_equal(
 		platforms.names(),
-		{ "fabric", "paper", "spigot" },
+		{ "bungeecord", "fabric", "paper", "spigot", "sponge", "velocity", "waterfall" },
 		"registry should expose implemented platforms in stable order"
 	)
 	assert_equal(platforms.build_systems("fabric"), { "gradle" }, "Fabric should only advertise supported builds")
@@ -47,8 +51,43 @@ local function test_platform_registry()
 	)
 end
 
-local function read_file(path)
-	return table.concat(vim.fn.readfile(path), "\n")
+local function test_additional_plugin_platforms()
+	local expectations = {
+		bungeecord = { dependency = "bungeecord-api", metadata = "src/main/resources/bungee.yml" },
+		waterfall = { dependency = "waterfall-api", metadata = "src/main/resources/bungee.yml" },
+		velocity = { dependency = "velocity-api", source_marker = "@Plugin" },
+		sponge = { dependency = "spongeapi", metadata = "src/main/resources/META-INF/sponge_plugins.json" },
+	}
+	for platform, expectation in pairs(expectations) do
+		local directory = vim.fn.tempname()
+		vim.fn.mkdir(directory, "p")
+		local ok, err = project.generate({
+			platform = platform,
+			build_system = "maven",
+			minecraft_version = platform == "velocity" and "3.5.0-SNAPSHOT" or "1.21",
+			directory = directory,
+			group_id = "com.example",
+			artifact_id = "example",
+			package_name = "com.example.example",
+			main_class = "ExamplePlugin",
+			language = "java",
+			plugin_version = "1.0.0",
+			authors = { "Alice" },
+			license = "MIT",
+		})
+		assert_equal(ok, true, platform .. " Maven generation should succeed")
+		assert_equal(err, nil, platform .. " Maven generation should not return an error")
+		local pom = read_file(directory .. "/pom.xml")
+		assert_truthy(pom:find(expectation.dependency, 1, true) ~= nil, platform .. " should use its API dependency")
+		if expectation.metadata then
+			assert_equal(vim.fn.filereadable(directory .. "/" .. expectation.metadata), 1, platform .. " metadata should exist")
+		end
+		if expectation.source_marker then
+			local source = read_file(directory .. "/src/main/java/com/example/example/ExamplePlugin.java")
+			assert_truthy(source:find(expectation.source_marker, 1, true) ~= nil, platform .. " source should contain metadata annotation")
+		end
+		vim.fn.delete(directory, "rf")
+	end
 end
 
 local function test_spigot_maven_generation()
@@ -324,6 +363,7 @@ local function run()
 	test_command_parse_success()
 	test_command_parse_failure()
 	test_platform_registry()
+	test_additional_plugin_platforms()
 	test_spigot_maven_generation()
 	test_paper_manifest_generation()
 	test_project_validation()

@@ -29,7 +29,7 @@ function M.dispatch(args)
 		return
 	end
 
-	require(platform.generator).run(parsed_args.build_tool, path, parsed_args.version)
+	require(platform.generator).run(parsed_args.build_tool, path, parsed_args.version, nil, parsed_args.project)
 end
 
 return M

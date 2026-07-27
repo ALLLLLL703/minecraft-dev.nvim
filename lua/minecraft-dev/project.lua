@@ -79,7 +79,7 @@ function M.generate(spec)
 	local platform = platforms.get(normalized.platform)
 	assert(platform ~= nil)
 	local generator = require(platform.generator)
-	generator.run(normalized.build_system, normalized.directory, normalized.minecraft_version, normalized)
+	generator.run(normalized.build_system, normalized.directory, normalized.minecraft_version, normalized, normalized.platform)
 	return true, nil
 end
 
