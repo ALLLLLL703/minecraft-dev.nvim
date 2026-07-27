@@ -11,8 +11,18 @@ local input_util = require("minecraft-dev.util.input")
 ---@field version? string
 ---@field package_path? string
 
+---@param spec? table
 ---@return ProjectContext
-function M.collect()
+function M.collect(spec)
+	if spec then
+		return {
+			groupId = spec.group_id,
+			artifactId = spec.artifact_id,
+			main = spec.main_class,
+			package = spec.package_name,
+		}
+	end
+
 	local config = require("minecraft-dev").config
 	local defaults = config.defaults.project
 	local prompts = config.prompts.project

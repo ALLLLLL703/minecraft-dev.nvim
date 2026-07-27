@@ -1,6 +1,7 @@
 local M = {}
 local command_args = require("minecraft-dev.command_args")
 local notify = require("minecraft-dev.util.notify")
+local platforms = require("minecraft-dev.platforms")
 
 function M.setup()
 	pcall(vim.api.nvim_del_user_command, "GmcPro")
@@ -18,15 +19,17 @@ function M.dispatch(args)
 	local config = require("minecraft-dev").config
 	local path = command_args.resolve_path(parsed_args.path, config.defaults.command.use_cwd_when_path_missing)
 
-	if parsed_args.project == "paper" then
-		require("minecraft-dev.generators.paper").run(parsed_args.build_tool, path, parsed_args.version)
+	local platform = platforms.get(parsed_args.project)
+	if not platform then
+		notify.notify(vim.log.levels.ERROR, { "command", "unsupported_project" }, tostring(parsed_args.project))
 		return
-	elseif parsed_args.project == "fabric" then
-		require("minecraft-dev.generators.fabric").run(parsed_args.build_tool, path, parsed_args.version)
+	end
+	if not platforms.supports(parsed_args.project, parsed_args.build_tool) then
+		notify.notify(vim.log.levels.ERROR, { "command", "unsupported_build" }, tostring(parsed_args.build_tool))
 		return
 	end
 
-	notify.notify(vim.log.levels.ERROR, { "command", "unsupported_project" }, tostring(parsed_args.project))
+	require(platform.generator).run(parsed_args.build_tool, path, parsed_args.version)
 end
 
 return M

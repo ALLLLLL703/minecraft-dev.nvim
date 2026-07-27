@@ -5,6 +5,7 @@ local M = {}
 ---@field side "client"|"server"|"both"
 ---@field generate_datagen boolean
 ---@field use_mixins boolean
+---@field loom_version? string
 
 ---@param side "client"|"server"|"both"
 ---@return string

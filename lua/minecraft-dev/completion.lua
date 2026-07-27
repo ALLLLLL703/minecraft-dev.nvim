@@ -1,7 +1,6 @@
 local M = {}
 
----@type table[]
-local completions = { paper = { "maven", "gradle" }, fabric = { "gradle" } }
+local platforms = require("minecraft-dev.platforms")
 
 ---comment
 ---@param arg_lead string
@@ -11,9 +10,9 @@ function M.complete(arg_lead, cmd_line)
 	local args = vim.split(cmd_line, "%s+", { trimempty = true })
 	local index = #args
 	if index == 1 then
-		return vim.tbl_map(tostring, vim.tbl_keys(completions))
-	elseif index == 2 and M.group_equals(vim.tbl_keys(completions), args[2]) then
-		return vim.tbl_values(completions[args[index]])
+		return platforms.names()
+	elseif index == 2 and platforms.get(args[2]) then
+		return platforms.build_systems(args[2])
 	elseif index >= 4 then
 		return vim.fn.getcompletion(arg_lead, "file")
 	end

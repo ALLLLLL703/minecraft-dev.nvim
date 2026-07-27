@@ -8,6 +8,12 @@ function M.setup(opts)
 	require("minecraft-dev.command").setup()
 end
 
+---@param spec table
+---@return boolean?, table?
+function M.generate(spec)
+	return require("minecraft-dev.project").generate(spec)
+end
+
 function M.reload()
 	local cur_config = vim.deepcopy(M.config)
 	local notify = require("minecraft-dev.util.notify")

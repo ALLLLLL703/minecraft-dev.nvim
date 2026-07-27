@@ -13,6 +13,7 @@
 /archetype/fabric_gradle/.gradle
 /archetype/fabric_gradle/.project
 /archetype/fabric_gradle/.settings
-/test
+/test/*
+!/test/test_refactor.lua
 /archetype/fabric_gradle/build
 /sess.vim

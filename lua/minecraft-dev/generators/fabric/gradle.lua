@@ -14,21 +14,35 @@ local version_data = require("minecraft-dev.generators.fabric.version_data")
 
 ---@param project_path string
 ---@param version string
-function M.generate(project_path, version)
+---@param spec? table
+function M.generate(project_path, version, spec)
 	local config = require("minecraft-dev").config
 	local mc_version = version or config.defaults.fabric.version
-	options.collect(function(generator_options)
+	local function generate(generator_options)
 		if version_util.resolve_family(mc_version) == "v1_13_plus" then
 			if generator_options.language == "java" then
-				M.generate_higher_java(project_path, mc_version, generator_options)
+				M.generate_higher_java(project_path, mc_version, generator_options, spec)
 				return
 			elseif generator_options.language == "kotlin" then
-				M.generate_higher_kotlin(project_path, mc_version, generator_options)
+				M.generate_higher_kotlin(project_path, mc_version, generator_options, spec)
 				return
 			end
 		end
 		notify.notify(vim.log.levels.ERROR, { "fabric", "lower_version_unsupported" })
-	end)
+	end
+
+	if spec then
+		generate({
+			language = spec.language,
+			side = spec.side or config.defaults.fabric.side,
+			generate_datagen = spec.generate_datagen == nil and config.defaults.fabric.generate_datagen
+				or spec.generate_datagen,
+			use_mixins = spec.use_mixins == nil and config.defaults.fabric.use_mixins or spec.use_mixins,
+			loom_version = spec.loom_version,
+		})
+		return
+	end
+	options.collect(generate)
 end
 
 ---@param ctx ProjectContext
@@ -46,10 +60,13 @@ local function generate_basic(ctx, generator_options)
 	local build_gradle_content = templates.read("build.gradle", ctx.lang)
 	fs.write_file(path_util.join(ctx.path, "build.gradle"), string.format(build_gradle_content))
 	local default_loom_version = json_data_table.loom_version or config.defaults.fabric.version_data.loom_version
-	local fabric_loom_version = input_util.not_empty_or(
-		vim.fn.input(config.prompts.fabric.loom_version, default_loom_version),
-		default_loom_version
-	)
+	local fabric_loom_version = generator_options.loom_version
+	if not fabric_loom_version then
+		fabric_loom_version = input_util.not_empty_or(
+			vim.fn.input(config.prompts.fabric.loom_version, default_loom_version),
+			default_loom_version
+		)
+	end
 
 	local gradle_properties_content = templates.read("gradle.properties", ctx.lang)
 	local fabric_api = json_data_table.fabric_api
@@ -87,9 +104,9 @@ end
 ---@param project_path string
 ---@param version string
 ---@param generator_options FabricGenerationOptions
-function M.generate_higher_kotlin(project_path, version, generator_options)
+function M.generate_higher_kotlin(project_path, version, generator_options, spec)
 	local path = project_path or vim.fn.getcwd()
-	local ctx = context.collect()
+	local ctx = context.collect(spec)
 	ctx.path = path
 	ctx.version = version
 	ctx.package_path = ctx.package:gsub("%.", "/")
@@ -161,9 +178,9 @@ end
 ---@param project_path string
 ---@param version string
 ---@param generator_options FabricGenerationOptions
-function M.generate_higher_java(project_path, version, generator_options)
+function M.generate_higher_java(project_path, version, generator_options, spec)
 	local path = project_path or vim.fn.getcwd()
-	local ctx = context.collect()
+	local ctx = context.collect(spec)
 	ctx.path = path
 	ctx.version = version
 	ctx.package_path = ctx.package:gsub("%.", "/")

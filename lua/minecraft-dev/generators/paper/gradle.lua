@@ -5,23 +5,23 @@ local path_util = require("minecraft-dev.util.path")
 local templates = require("minecraft-dev.generators.paper.templates")
 local version_util = require("minecraft-dev.version")
 local gradle_util = require("minecraft-dev.util.gradle")
-local choices = require("minecraft-dev.util.make_your_choice")
+local options = require("minecraft-dev.generators.paper.options")
 
 local M = {}
 
 --- generate entry
 ---@param project_path string
 ---@param version string
-function M.generate(project_path, version)
+function M.generate(project_path, version, language, spec)
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
-	choices.which_paper_language(function(language)
+	options.with_language(language, function(selected_language)
 		local family = version_util.resolve_family(mc_version)
 
 		if family == "v1_13_plus" then
-			M.generate_higher(project_path, mc_version, language)
+			M.generate_higher(project_path, mc_version, selected_language, spec)
 			return
 		end
-		M.generate_lower(project_path, mc_version, language)
+		M.generate_lower(project_path, mc_version, selected_language, spec)
 	end)
 end
 
@@ -50,11 +50,11 @@ end
 
 ---@param project_path string
 ---@param version string
-function M.generate_higher(project_path, version, language)
+function M.generate_higher(project_path, version, language, spec)
 	local path = project_path or vim.fn.getcwd()
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
 	local lang = language or require("minecraft-dev").config.defaults.paper.language
-	local ctx = context.collect()
+	local ctx = context.collect(spec)
 	ctx.path = path
 	ctx.version = mc_version
 	ctx.package_path = ctx.package:gsub("%.", "/")
@@ -86,11 +86,11 @@ end
 
 ---@param project_path string
 ---@param version string
-function M.generate_lower(project_path, version, language)
+function M.generate_lower(project_path, version, language, spec)
 	local path = project_path or vim.fn.getcwd()
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
 	local lang = language or require("minecraft-dev").config.defaults.paper.language
-	local ctx = context.collect()
+	local ctx = context.collect(spec)
 	ctx.path = path
 	ctx.version = mc_version
 	ctx.package_path = ctx.package:gsub("%.", "/")
