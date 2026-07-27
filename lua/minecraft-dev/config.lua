@@ -33,6 +33,16 @@ M.default_config = {
 		},
 	},
 	prompts = {
+		custom = {
+			select_template = "Select Minecraft project template",
+			directory = "Project directory: ",
+			project_name = "Project name: ",
+			property = "%s: ",
+			property_json = "%s (JSON): ",
+			group_id = "Group ID: ",
+			artifact_id = "Artifact ID: ",
+			project_version = "Project version: ",
+		},
 		project = {
 			group_id = "groupId?",
 			artifact_id = "artifactId?",
@@ -52,6 +62,12 @@ M.default_config = {
 		},
 	},
 	messages = {
+		custom = {
+			list_failed = "Failed to list Minecraft templates: %s",
+			generation_failed = "Failed to generate template: %s",
+			generated = "Generated Minecraft project at %s",
+			invalid_json = "Invalid JSON value for %s",
+		},
 		command = {
 			invalid_args = "Usage: GmcPro [fabric|paper] [gradle|maven] <minecraft_version> [path]",
 			unsupported_project = "Unsupported project type: %s",

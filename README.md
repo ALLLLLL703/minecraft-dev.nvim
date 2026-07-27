@@ -73,7 +73,11 @@ require("minecraft-dev").setup({
 and use the command
 ```vim
 GmcPro [fabric|paper] [gradle|maven] version_minecraft [path/to/the/place/your/want/to/init/your/project]
+MinecraftDevNew
 ```
+
+`MinecraftDevNew` opens the builtin Neovim UI wizard backed by the official MinecraftDev template repository. Complex
+version properties are entered as JSON objects; prompts and messages remain configurable through `setup()`.
 
 When generating a Fabric project, the plugin now asks for:
 

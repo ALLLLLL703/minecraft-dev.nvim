@@ -5,9 +5,13 @@ local platforms = require("minecraft-dev.platforms")
 
 function M.setup()
 	pcall(vim.api.nvim_del_user_command, "GmcPro")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevNew")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
+	vim.api.nvim_create_user_command("MinecraftDevNew", function()
+		require("minecraft-dev.custom.wizard").run()
+	end, {})
 end
 
 function M.dispatch(args)

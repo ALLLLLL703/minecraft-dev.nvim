@@ -217,6 +217,7 @@ local function discover(root)
 						label = descriptor.label or (name == ".mcdev.template.json" and vim.fs.basename(directory) or name:gsub("%.mcdev%.template%.json$", "")),
 						group = descriptor.group or "default",
 						version = descriptor.version,
+						definition = descriptor,
 					})
 				end
 			end
