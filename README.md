@@ -114,6 +114,26 @@ Forge and NeoForge use Gradle and require `loader_version`. They also accept `pa
 Architectury uses Gradle and requires `fabric_loader_version`, `fabric_api_version`, `forge_version`, and
 `architectury_api_version`. It generates `common`, `fabric`, and `forge` modules.
 
+### Custom Templates
+
+Local MinecraftDev creator descriptors (`.mcdev.template.json`, format versions 1-3) can be generated without UI:
+
+```lua
+local result, err = require("minecraft-dev").generate_template({
+  provider = "local",
+  source = "/path/to/template/repository",
+  descriptor = "fabric/.mcdev.template.json",
+  directory = "/tmp/example",
+  properties = {
+    PROJECT_NAME = "example",
+    LANGUAGE = "Java",
+  },
+})
+```
+
+Template and destination paths are confined to their configured roots. The evaluator does not execute arbitrary Lua
+or shell code.
+
 ## Contribute
 
 if you are interested with minecraft dev in Neovim and wants the template setup like MinecraftDev in intellij-idea

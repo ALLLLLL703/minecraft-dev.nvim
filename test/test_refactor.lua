@@ -4,6 +4,8 @@ local metadata = require("minecraft-dev.generators.fabric.metadata")
 local paper_templates = require("minecraft-dev.generators.paper.templates")
 local platforms = require("minecraft-dev.platforms")
 local project = require("minecraft-dev.project")
+local custom_templates = require("minecraft-dev.custom")
+local custom_evaluator = require("minecraft-dev.custom.evaluator")
 
 local function assert_equal(actual, expected, message)
 	if not vim.deep_equal(actual, expected) then
@@ -86,6 +88,64 @@ local function test_architectury_generation()
 	assert_equal(vim.fn.filereadable(directory .. "/fabric/src/main/resources/fabric.mod.json"), 1, "Fabric metadata should exist")
 	assert_equal(vim.fn.filereadable(directory .. "/forge/src/main/resources/META-INF/mods.toml"), 1, "Forge metadata should exist")
 	vim.fn.delete(directory, "rf")
+end
+
+local function test_custom_v3_local_template()
+	local template_root = vim.fn.tempname()
+	local destination = vim.fn.tempname()
+	vim.fn.mkdir(template_root .. "/templates", "p")
+	vim.fn.mkdir(destination, "p")
+	local template_fs = require("minecraft-dev.util.fs")
+	template_fs.write_file(template_root .. "/templates/Main.java.ft", [[package ${PACKAGE};
+#if ($ENABLED)
+public class ${CLASS_NAME} {}
+#else
+final class Disabled {}
+#end
+]])
+	template_fs.write_file(template_root .. "/optional.ft", "enabled=${ENABLED}\n")
+	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		properties = {
+			{ name = "ENABLED", type = "boolean", default = true },
+			{ name = "PACKAGE", type = "string", default = "com.example" },
+			{ name = "CLASS_NAME", type = "string", default = "Example" },
+		},
+		files = {
+			{ template = "templates/Main.java.ft", destination = "src/${PACKAGE}/${CLASS_NAME}.java" },
+			{ template = "optional.ft", destination = "optional.txt", condition = "$ENABLED" },
+		},
+	}))
+
+	local result, err = custom_templates.generate({
+		provider = "local",
+		source = template_root,
+		directory = destination,
+		properties = { PACKAGE = "dev.example", CLASS_NAME = "Demo" },
+	})
+	assert_truthy(result ~= nil, "custom v3 template should generate files")
+	assert_equal(err, nil, "custom v3 template should not return an error")
+	assert_equal(vim.fn.filereadable(destination .. "/src/dev.example/Demo.java"), 1, "templated destination should exist")
+	local source = read_file(destination .. "/src/dev.example/Demo.java")
+	assert_truthy(source:find("public class Demo", 1, true) ~= nil, "Velocity condition and variables should render")
+	assert_equal(vim.fn.filereadable(destination .. "/optional.txt"), 1, "true file condition should generate file")
+	vim.fn.delete(template_root, "rf")
+	vim.fn.delete(destination, "rf")
+end
+
+local function test_custom_velocity_directives()
+	local rendered = custom_evaluator.render({ ENABLED = false, FALLBACK = true, ITEMS = { "a", "b" } }, [[#set ($PREFIX = "item")
+#if ($ENABLED)
+wrong
+#elseif ($FALLBACK)
+#foreach (${ITEM} in ${ITEMS})
+${PREFIX}:${ITEM}
+#end
+#else
+wrong
+#end
+]])
+	assert_equal(rendered, "item:a\nitem:b\n", "Velocity set, elseif, and foreach directives should render")
 end
 
 local function test_forge_family_generation()
@@ -436,6 +496,8 @@ local function run()
 	test_command_parse_failure()
 	test_platform_registry()
 	test_architectury_generation()
+	test_custom_v3_local_template()
+	test_custom_velocity_directives()
 	test_forge_family_generation()
 	test_additional_plugin_platforms()
 	test_spigot_maven_generation()
