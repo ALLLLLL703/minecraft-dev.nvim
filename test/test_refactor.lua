@@ -7,6 +7,7 @@ local project = require("minecraft-dev.project")
 local custom_templates = require("minecraft-dev.custom")
 local custom_evaluator = require("minecraft-dev.custom.evaluator")
 local fabric_version_data = require("minecraft-dev.generators.fabric.version_data")
+local gradle = require("minecraft-dev.util.gradle")
 
 local function assert_equal(actual, expected, message)
 	if not vim.deep_equal(actual, expected) then
@@ -406,6 +407,27 @@ local function test_additional_plugin_platforms()
 	end
 end
 
+local function test_gradle_wrapper_generation_isolated_from_project()
+	local directory = vim.fn.tempname()
+	vim.fn.mkdir(directory, "p")
+	local function fake_system(command, options, callback)
+		assert_equal(command, { "gradle", "wrapper", "--gradle-version", "8.10.2" }, "wrapper should use the compatible Gradle version")
+		assert_truthy(options.cwd ~= directory, "wrapper should be generated outside the target project")
+		vim.fn.mkdir(options.cwd .. "/gradle/wrapper", "p")
+		vim.fn.writefile({ "#!/bin/sh" }, options.cwd .. "/gradlew")
+		vim.fn.writefile({}, options.cwd .. "/gradlew.bat")
+		vim.fn.writefile({}, options.cwd .. "/gradle/wrapper/gradle-wrapper.jar")
+		vim.fn.writefile({ "distributionUrl=gradle-8.10.2-bin.zip" }, options.cwd .. "/gradle/wrapper/gradle-wrapper.properties")
+		callback({ code = 0, stderr = "" })
+	end
+
+	gradle.generate_gradlew(directory, fake_system)
+	assert_truthy(vim.wait(1000, function()
+		return vim.fn.filereadable(directory .. "/gradle/wrapper/gradle-wrapper.properties") == 1
+	end, 10), "wrapper files should be copied into the target project")
+	vim.fn.delete(directory, "rf")
+end
+
 local function test_spigot_maven_generation()
 	local directory = vim.fn.tempname()
 	vim.fn.mkdir(directory, "p")
@@ -690,6 +712,7 @@ local function run()
 	test_fabric_online_version_parser()
 	test_forge_family_generation()
 	test_additional_plugin_platforms()
+	test_gradle_wrapper_generation_isolated_from_project()
 	test_spigot_maven_generation()
 	test_paper_manifest_generation()
 	test_project_validation()
