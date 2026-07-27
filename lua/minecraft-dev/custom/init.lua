@@ -75,6 +75,16 @@ local function derive_value(property, properties)
 		if evaluator.expression({ VERSION = version }, "$VERSION.compareTo($mcver.MC1_18) >= 0") then return 17 end
 		return 8
 	end
+	if derivation.method == "extractVersionMajorMinor" or derivation.method == "extractPaperApiVersion" then
+		local version = properties[(derivation.parents or {})[1]]
+		if type(version) == "table" then version = version.minecraftVersion or version.minecraft or version.version end
+		return tostring(version or ""):match("^(%d+%.%d+)")
+	end
+	if derivation.method == "fetchPaperDependencyVersionForMcVersion" then
+		local version = properties[(derivation.parents or {})[1]]
+		if type(version) == "table" then version = version.minecraftVersion or version.minecraft or version.version end
+		return tostring(version or "") .. "-R0.1-SNAPSHOT"
+	end
 	return derivation.default
 end
 
@@ -88,14 +98,38 @@ local function collect_properties(descriptor, provided)
 	local flattened = {}
 	flatten_properties(descriptor.properties, flattened)
 	for _, property in ipairs(flattened) do
-		if properties[property.name] == nil then
-			if property.inheritFrom then properties[property.name] = properties[property.inheritFrom]
-			elseif property.derives then properties[property.name] = derive_value(property, properties)
-			elseif property.default ~= nil then
-				if property.options and type(property.default) == "number" then
-					properties[property.name] = property.options[property.default + 1]
-				else properties[property.name] = property.default end
+		if properties[property.name] == nil and property.default ~= nil then
+			if property.options and type(property.default) == "number" then
+				properties[property.name] = property.options[property.default + 1]
+			elseif property.type ~= "jdk" and (type(property.default) ~= "string" or property.default:sub(1, 1) ~= "$") then
+				properties[property.name] = property.default
 			end
+		end
+	end
+	for _ = 1, #flattened do
+		local changed = false
+		for _, property in ipairs(flattened) do
+			if properties[property.name] == nil then
+				local value
+				if property.inheritFrom and properties[property.inheritFrom] ~= nil then value = properties[property.inheritFrom]
+				elseif property.derives then value = derive_value(property, properties) end
+				if value ~= nil then properties[property.name], changed = value, true end
+			end
+		end
+		if not changed then break end
+	end
+	for _, property in ipairs(flattened) do
+		if properties[property.name] == nil then
+			if type(property.default) == "string" and property.default:sub(1, 1) == "$" then
+				properties[property.name] = evaluator.expression(properties, property.default)
+			elseif property.type == "jdk" and type(property.default) == "string" then
+				properties[property.name] = properties[property.default]
+			end
+		end
+		if type(property.forceValue) == "table"
+			and evaluator.expression(properties, property.forceValue.condition or "false")
+		then
+			properties[property.name] = evaluator.expression(properties, tostring(property.forceValue.value))
 		end
 		if property.type == "class_fqn" and properties[property.name] ~= nil then
 			properties[property.name] = class_fqn(properties[property.name])
@@ -103,6 +137,11 @@ local function collect_properties(descriptor, provided)
 			properties[property.name] = vim.split(properties[property.name], "%s*,%s*", { trimempty = true })
 		elseif property.type == "license" and type(properties[property.name]) == "string" then
 			properties[property.name] = { id = properties[property.name], name = properties[property.name], year = tonumber(os.date("%Y")) }
+		elseif property.type == "gradle_plugin" and type(properties[property.name]) ~= "table" then
+			properties[property.name] = { enabled = not not properties[property.name], version = property.parameters and property.parameters.version }
+		end
+		if property.nullIfDefault and vim.deep_equal(properties[property.name], property.default) then
+			properties[property.name] = nil
 		end
 		if property.validator and properties[property.name] ~= nil then
 			local value = tostring(properties[property.name])
@@ -147,9 +186,10 @@ local function generate_from_root(options, root)
 		end
 	end
 	local result = { files = generated, descriptor = descriptor, properties = properties }
+	local finalizers = options.skip_finalizers and {} or descriptor.finalizers or {}
 	local finalizer_handle, finalizer_error = require("minecraft-dev.custom.finalizers").execute(
 		destination_root,
-		descriptor.finalizers or {},
+		finalizers,
 		properties,
 		function(err)
 			if options.finalizer_callback then options.finalizer_callback(err) end

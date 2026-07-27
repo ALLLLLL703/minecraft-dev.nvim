@@ -134,6 +134,10 @@ local result, err = require("minecraft-dev").generate_template({
 Template and destination paths are confined to their configured roots. The evaluator does not execute arbitrary Lua
 or shell code.
 
+The compatibility evaluator supports the Velocity directives and object expressions used by the official Java and
+Kotlin templates, including semantic version comparisons, class FQN subpackages, property derivations, and inline
+conditionals.
+
 Available providers are `local`, `archive`, `remote`, and `builtin`. Archive, remote, and builtin providers are
 asynchronous and require `callback = function(result, err) ... end`; the returned handle supports `cancel()`.
 `builtin` uses the official `minecraft-dev/templates` repository, while `remote` accepts any Git repository URL.

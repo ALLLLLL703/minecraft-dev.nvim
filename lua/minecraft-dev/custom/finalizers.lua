@@ -13,7 +13,11 @@ local function command_for(finalizer, project_root)
 	if finalizer.type == "run_gradle_tasks" then
 		local wrapper = vim.fs.joinpath(project_root, "gradlew")
 		local executable = vim.fn.filereadable(wrapper) == 1 and wrapper or "gradle"
-		return vim.list_extend({ executable }, vim.deepcopy(finalizer.tasks or {}))
+		local command = { executable }
+		for _, task in ipairs(finalizer.tasks or {}) do
+			vim.list_extend(command, vim.split(task, "%s+", { trimempty = true }))
+		end
+		return command
 	elseif finalizer.type == "git_add_all" then
 		return { "git", "add", "--all" }
 	end

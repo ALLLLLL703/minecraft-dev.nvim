@@ -147,6 +147,11 @@ wrong
 #end
 ]])
 	assert_equal(rendered, "item:a\nitem:b\n", "Velocity set, elseif, and foreach directives should render")
+	assert_equal(
+		custom_evaluator.render({ ENABLED = true, VERSION = "1.13.8+kotlin.2.2.21" }, 'plugin #if ($ENABLED)yes#else no#end ${VERSION.toString().split("kotlin.")[1]}'),
+		"plugin yes 2.2.21",
+		"inline conditions and chained string methods should render"
+	)
 end
 
 local function test_custom_archive_provider()
@@ -236,7 +241,7 @@ local function test_custom_property_derivations()
 	vim.fn.mkdir(template_root, "p")
 	vim.fn.mkdir(destination, "p")
 	local template_fs = require("minecraft-dev.util.fs")
-	template_fs.write_file(template_root .. "/main.ft", "${MAIN_CLASS.packageName}:${MAIN_CLASS.className}:${JAVA_VERSION}\n")
+	template_fs.write_file(template_root .. "/main.ft", "${MAIN_CLASS.packageName}:${MAIN_CLASS.className}:${MAIN_CLASS.withSubPackage('client').path}:${JAVA_VERSION}:${PLUGIN.enabled}\n")
 	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
 		version = 3,
 		properties = {
@@ -247,6 +252,7 @@ local function test_custom_property_derivations()
 			},
 			{ name = "BUILD_COORDS", type = "build_system_coordinates" },
 			{ name = "MAIN_CLASS", type = "class_fqn", derives = { parents = { "BUILD_COORDS", "MOD_ID" }, method = "suggestClassName" } },
+			{ name = "PLUGIN", type = "gradle_plugin", default = "$JAVA_VERSION == 21" },
 			{
 				name = "JAVA_VERSION", type = "integer",
 				derives = { select = { { condition = "$MC_VERSION.compareTo($mcver.MC1_20_5) >= 0", value = 21 } }, default = 17 },
@@ -265,7 +271,7 @@ local function test_custom_property_derivations()
 	})
 	assert_truthy(result ~= nil, "derived custom properties should generate")
 	assert_equal(err, nil, "derived custom properties should not return an error")
-	assert_equal(read_file(destination .. "/main.txt"), "dev.example.demo:DemoProject:21", "official derivations and semantic conditions should resolve")
+	assert_equal(read_file(destination .. "/main.txt"), "dev.example.demo:DemoProject:dev/example/demo/client/DemoProject:21:true", "official derivations and semantic conditions should resolve")
 	vim.fn.delete(template_root, "rf")
 	vim.fn.delete(destination, "rf")
 end

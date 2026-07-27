@@ -32,6 +32,16 @@ local function compare_versions(left, right)
 	return 0
 end
 
+local function stringify(value)
+	if type(value) ~= "table" then return value == nil and "" or tostring(value) end
+	if value.value ~= nil then return tostring(value.value) end
+	if value.packageName and value.className then
+		return value.packageName == "" and value.className or value.packageName .. "." .. value.className
+	end
+	if vim.islist(value) then return table.concat(vim.tbl_map(tostring, value), ", ") end
+	return tostring(value.name or value.id or "")
+end
+
 local function find_operator(expression, operator)
 	local depth = 0
 	local quote = nil
@@ -72,6 +82,27 @@ local evaluate
 
 evaluate = function(properties, expression)
 	expression = strip_parentheses(trim(expression))
+	local class_reference, subpackage_expression, class_field = expression:match("^%$([%w_%.]+)%.withSubPackage%((.-)%)%.([%w_]+)$")
+	if class_reference then
+		local class = resolve(properties, class_reference)
+		local subpackage = tostring(evaluate(properties, subpackage_expression))
+		if type(class) ~= "table" then return nil end
+		local package_name = class.packageName == "" and subpackage or class.packageName .. "." .. subpackage
+		local derived = {
+			packageName = package_name,
+			packagePath = package_name:gsub("%.", "/"),
+			className = class.className,
+		}
+		derived.path = derived.packagePath .. "/" .. derived.className
+		return derived[class_field]
+	end
+	local chain_receiver, separator, requested_index = expression:match("^(.-)%.toString%(%)%.split%((.-)%)%[(%d+)%]$")
+	if chain_receiver then
+		local value = tostring(evaluate(properties, chain_receiver))
+		separator = tostring(evaluate(properties, separator))
+		local parts = vim.split(value, separator, { plain = true })
+		return parts[tonumber(requested_index) + 1]
+	end
 	for _, operator in ipairs({ "||", "&&", "==", "!=", ">=", "<=", ">", "<" }) do
 		local index = find_operator(expression, operator)
 		if index then
@@ -119,14 +150,25 @@ end
 ---@param content string
 ---@return string
 function M.interpolate(properties, content)
-	content = content:gsub("%${([%w_%.]+)}", function(reference)
-		local value = resolve(properties, reference)
-		return value == nil and "" or tostring(value)
+	content = content:gsub("%${(.-)}", function(reference)
+		local value = M.expression(properties, "$" .. reference)
+		return stringify(value)
 	end)
 	content = content:gsub("%$([%a_][%w_%.]*)", function(reference)
 		local value = resolve(properties, reference)
-		return value == nil and "$" .. reference or tostring(value)
+		return value == nil and "$" .. reference or stringify(value)
 	end)
+	return content
+end
+
+local function render_inline(properties, content)
+	for _ = 1, 100 do
+		local replaced = 0
+		content, replaced = content:gsub("#if%s*%(([^()\n]*)%)%s*([^\n]-)#else%s*([^\n]-)#end", function(condition, truthy, falsy)
+			return M.expression(properties, condition) and truthy or falsy
+		end)
+		if replaced == 0 then break end
+	end
 	return content
 end
 
@@ -211,6 +253,7 @@ end
 ---@param content string
 ---@return string
 function M.render(properties, content)
+	content = render_inline(properties, content)
 	return (render_range(parse_lines(content), 1, vim.deepcopy(properties)))
 end
 
