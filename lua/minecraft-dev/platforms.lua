@@ -1,6 +1,10 @@
 local M = {}
 
 local registry = {
+	architectury = {
+		build_systems = { "gradle" },
+		generator = "minecraft-dev.generators.architectury",
+	},
 	bungeecord = {
 		build_systems = { "gradle", "maven" },
 		generator = "minecraft-dev.generators.plugin",

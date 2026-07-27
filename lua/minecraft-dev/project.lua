@@ -75,6 +75,16 @@ function M.validate(spec)
 			return nil, validation_error("invalid_mod_id", "artifact_id")
 		end
 	end
+	if spec.platform == "architectury" then
+		if spec.language ~= "java" then
+			return nil, validation_error("unsupported_language", "language")
+		end
+		for _, field in ipairs({ "fabric_loader_version", "fabric_api_version", "forge_version", "architectury_api_version" }) do
+			if type(spec[field]) ~= "string" or spec[field] == "" then
+				return nil, validation_error("missing_field", field)
+			end
+		end
+	end
 
 	return vim.deepcopy(spec), nil
 end

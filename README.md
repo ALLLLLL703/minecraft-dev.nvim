@@ -13,6 +13,7 @@ Now can using to generate
 - velocity plugins
 - sponge plugins
 - forge and neoforge mods
+- architectury Fabric/Forge multi-loader mods
 
 
 <!-- TOC -->
@@ -109,6 +110,9 @@ Paper and Spigot specifications also accept `plugin_name`, `plugin_version`, `de
 
 Forge and NeoForge use Gradle and require `loader_version`. They also accept `parchment_version`, `use_mixins`,
 `plugin_name`, `plugin_version`, `description`, and `license`.
+
+Architectury uses Gradle and requires `fabric_loader_version`, `fabric_api_version`, `forge_version`, and
+`architectury_api_version`. It generates `common`, `fabric`, and `forge` modules.
 
 ## Contribute
 

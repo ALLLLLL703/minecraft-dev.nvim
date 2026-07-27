@@ -40,7 +40,7 @@ end
 local function test_platform_registry()
 	assert_equal(
 		platforms.names(),
-		{ "bungeecord", "fabric", "forge", "neoforge", "paper", "spigot", "sponge", "velocity", "waterfall" },
+		{ "architectury", "bungeecord", "fabric", "forge", "neoforge", "paper", "spigot", "sponge", "velocity", "waterfall" },
 		"registry should expose implemented platforms in stable order"
 	)
 	assert_equal(platforms.build_systems("fabric"), { "gradle" }, "Fabric should only advertise supported builds")
@@ -49,6 +49,43 @@ local function test_platform_registry()
 		{ "gradle", "maven" },
 		"Paper should advertise Gradle and Maven"
 	)
+end
+
+local function test_architectury_generation()
+	local gradle = require("minecraft-dev.util.gradle")
+	local original_generate_gradlew = gradle.generate_gradlew
+	gradle.generate_gradlew = function() end
+	local directory = vim.fn.tempname()
+	vim.fn.mkdir(directory, "p")
+	local ok, err = project.generate({
+		platform = "architectury",
+		build_system = "gradle",
+		minecraft_version = "1.21.1",
+		directory = directory,
+		group_id = "com.example",
+		artifact_id = "examplemod",
+		package_name = "com.example.examplemod",
+		main_class = "ExampleMod",
+		language = "java",
+		plugin_version = "1.0.0",
+		fabric_loader_version = "0.16.14",
+		fabric_api_version = "0.116.0+1.21.1",
+		forge_version = "52.1.0",
+		architectury_api_version = "13.0.8",
+	})
+	gradle.generate_gradlew = original_generate_gradlew
+	assert_equal(ok, true, "Architectury generation should succeed")
+	assert_equal(err, nil, "Architectury generation should not return an error")
+	for _, module in ipairs({ "common", "fabric", "forge" }) do
+		assert_equal(vim.fn.filereadable(directory .. "/" .. module .. "/build.gradle"), 1, module .. " build should exist")
+	end
+	local settings = read_file(directory .. "/settings.gradle")
+	assert_truthy(settings:find("common", 1, true) ~= nil, "settings should include common module")
+	assert_truthy(settings:find("fabric", 1, true) ~= nil, "settings should include Fabric module")
+	assert_truthy(settings:find("forge", 1, true) ~= nil, "settings should include Forge module")
+	assert_equal(vim.fn.filereadable(directory .. "/fabric/src/main/resources/fabric.mod.json"), 1, "Fabric metadata should exist")
+	assert_equal(vim.fn.filereadable(directory .. "/forge/src/main/resources/META-INF/mods.toml"), 1, "Forge metadata should exist")
+	vim.fn.delete(directory, "rf")
 end
 
 local function test_forge_family_generation()
@@ -398,6 +435,7 @@ local function run()
 	test_command_parse_success()
 	test_command_parse_failure()
 	test_platform_registry()
+	test_architectury_generation()
 	test_forge_family_generation()
 	test_additional_plugin_platforms()
 	test_spigot_maven_generation()
