@@ -138,6 +138,10 @@ Available providers are `local`, `archive`, `remote`, and `builtin`. Archive, re
 asynchronous and require `callback = function(result, err) ... end`; the returned handle supports `cancel()`.
 `builtin` uses the official `minecraft-dev/templates` repository, while `remote` accepts any Git repository URL.
 
+Supported finalizers are `run_gradle_tasks`, `import_gradle_project`, `import_maven_project`, `add_gradle_run`,
+`add_maven_run`, and `git_add_all`. Import finalizers emit `User MinecraftDevProjectGenerated`; reusable run definitions
+are written to `.nvim/minecraft-dev-runs.json`. External commands remain asynchronous.
+
 ## Contribute
 
 if you are interested with minecraft dev in Neovim and wants the template setup like MinecraftDev in intellij-idea

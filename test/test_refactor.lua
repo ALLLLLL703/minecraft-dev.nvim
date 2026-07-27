@@ -229,6 +229,73 @@ local function test_custom_remote_provider()
 	vim.fn.delete(destination, "rf")
 end
 
+local function test_custom_property_derivations()
+	local template_root = vim.fn.tempname()
+	local destination = vim.fn.tempname()
+	vim.fn.mkdir(template_root, "p")
+	vim.fn.mkdir(destination, "p")
+	local template_fs = require("minecraft-dev.util.fs")
+	template_fs.write_file(template_root .. "/main.ft", "${MAIN_CLASS.packageName}:${MAIN_CLASS.className}:${JAVA_VERSION}\n")
+	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		properties = {
+			{ name = "PROJECT_NAME", type = "string", default = "Demo Project" },
+			{
+				name = "MOD_ID", type = "string", validator = "[a-z][a-z0-9-_]{1,63}",
+				derives = { parents = { "PROJECT_NAME" }, method = "replace", parameters = { regex = "[^a-z0-9-_]+", replacement = "_", lowercase = true } },
+			},
+			{ name = "BUILD_COORDS", type = "build_system_coordinates" },
+			{ name = "MAIN_CLASS", type = "class_fqn", derives = { parents = { "BUILD_COORDS", "MOD_ID" }, method = "suggestClassName" } },
+			{
+				name = "JAVA_VERSION", type = "integer",
+				derives = { select = { { condition = "$MC_VERSION.compareTo($mcver.MC1_20_5) >= 0", value = 21 } }, default = 17 },
+			},
+		},
+		files = { { template = "main.ft", destination = "main.txt" } },
+	}))
+	local result, err = custom_templates.generate({
+		provider = "local",
+		source = template_root,
+		directory = destination,
+		properties = {
+			BUILD_COORDS = { groupId = "dev.example", artifactId = "demo", version = "1.0.0" },
+			MC_VERSION = "1.21.1",
+		},
+	})
+	assert_truthy(result ~= nil, "derived custom properties should generate")
+	assert_equal(err, nil, "derived custom properties should not return an error")
+	assert_equal(read_file(destination .. "/main.txt"), "dev.example.demo:DemoProject:21", "official derivations and semantic conditions should resolve")
+	vim.fn.delete(template_root, "rf")
+	vim.fn.delete(destination, "rf")
+end
+
+local function test_custom_run_config_finalizers()
+	local template_root = vim.fn.tempname()
+	local destination = vim.fn.tempname()
+	vim.fn.mkdir(template_root, "p")
+	vim.fn.mkdir(destination, "p")
+	local template_fs = require("minecraft-dev.util.fs")
+	template_fs.write_file(template_root .. "/empty.ft", "project\n")
+	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		files = { { template = "empty.ft", destination = "README.txt" } },
+		finalizers = {
+			{ type = "add_gradle_run", name = "Build", tasks = { "build" } },
+			{ type = "add_maven_run", name = "Package", goals = { "package" } },
+		},
+	}))
+	local result, err = custom_templates.generate({ provider = "local", source = template_root, directory = destination })
+	assert_truthy(result ~= nil, "run config finalizers should complete")
+	assert_equal(err, nil, "run config finalizers should not return an error")
+	local runs = vim.json.decode(read_file(destination .. "/.nvim/minecraft-dev-runs.json"))
+	assert_equal(runs[1].type, "gradle", "Gradle run finalizer should persist its type")
+	assert_equal(runs[1].args, { "build" }, "Gradle run finalizer should persist tasks")
+	assert_equal(runs[2].type, "maven", "Maven run finalizer should persist its type")
+	assert_equal(runs[2].args, { "package" }, "Maven run finalizer should persist goals")
+	vim.fn.delete(template_root, "rf")
+	vim.fn.delete(destination, "rf")
+end
+
 local function test_forge_family_generation()
 	local gradle = require("minecraft-dev.util.gradle")
 	local original_generate_gradlew = gradle.generate_gradlew
@@ -581,6 +648,8 @@ local function run()
 	test_custom_velocity_directives()
 	test_custom_archive_provider()
 	test_custom_remote_provider()
+	test_custom_property_derivations()
+	test_custom_run_config_finalizers()
 	test_forge_family_generation()
 	test_additional_plugin_platforms()
 	test_spigot_maven_generation()

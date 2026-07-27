@@ -6,6 +6,8 @@ end
 
 local function resolve(properties, reference)
 	reference = reference:gsub("^%$", ""):gsub("^%{", ""):gsub("%}$", "")
+	local minecraft_constant = reference:match("^mcver%.MC(.+)$")
+	if minecraft_constant then return minecraft_constant:gsub("_", ".") end
 	local current = properties
 	for segment in reference:gmatch("[%w_]+") do
 		if type(current) ~= "table" then
@@ -14,6 +16,20 @@ local function resolve(properties, reference)
 		current = current[segment]
 	end
 	return current
+end
+
+local function compare_versions(left, right)
+	local function parts(value)
+		local output = {}
+		for part in tostring(value or ""):gmatch("%d+") do table.insert(output, tonumber(part)) end
+		return output
+	end
+	local left_parts, right_parts = parts(left), parts(right)
+	for index = 1, math.max(#left_parts, #right_parts) do
+		local difference = (left_parts[index] or 0) - (right_parts[index] or 0)
+		if difference < 0 then return -1 elseif difference > 0 then return 1 end
+	end
+	return 0
 end
 
 local function find_operator(expression, operator)
@@ -70,6 +86,16 @@ evaluate = function(properties, expression)
 			if operator == ">" then return left > right end
 			return left < right
 		end
+	end
+	local receiver, argument = expression:match("^(.-)%.compareTo%s*%((.*)%)$")
+	if receiver then return compare_versions(evaluate(properties, receiver), evaluate(properties, argument)) end
+	receiver, argument = expression:match("^(.-)%.contains%s*%((.*)%)$")
+	if receiver then return tostring(evaluate(properties, receiver)):find(tostring(evaluate(properties, argument)), 1, true) ~= nil end
+	local semver_method, semver_arguments = expression:match("^%$semver%.([%w_]+)%((.*)%)$")
+	if semver_method then
+		local values = {}
+		for value in semver_arguments:gmatch("[^,]+") do table.insert(values, tostring(evaluate(properties, value))) end
+		return table.concat(values, ".")
 	end
 	if expression:sub(1, 1) == "!" then return not evaluate(properties, expression:sub(2)) end
 	if expression == "true" then return true end
