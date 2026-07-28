@@ -99,13 +99,13 @@
 本地缺失：
 
 - [x] Paper Fill API 动态正式版本列表，最低版本策略和真实依赖版本派生。
-- [ ] Gradle version catalog。
-- [ ] `plugin.yml` 与 `paper-plugin.yml` 完整切换。
-- [ ] Paper bootstrap 类。
-- [ ] plugin loader，以及 Kotlin 项目选择 Java/Kotlin loader。
-- [ ] Gremlin、run-paper、Shadow、paperweight-userdev、resource-factory 插件选项。
-- [ ] run-paper 自动接受 EULA 和 `runServer` 运行配置。
-- [ ] Gremlin、Kotlin、resource-factory 之间的 `forceValue` 规则。
+- [x] Gradle version catalog。
+- [x] `plugin.yml` 与 `paper-plugin.yml` 完整切换。
+- [x] Paper bootstrap 类。
+- [x] plugin loader，以及 Kotlin 项目选择 Java/Kotlin loader。
+- [x] Gremlin、run-paper、Shadow、paperweight-userdev、resource-factory 插件选项。
+- [x] run-paper 自动接受 EULA 和 `runServer` 运行配置。
+- [x] Gremlin、Kotlin、resource-factory 之间的 `forceValue` 规则。
 
 验收：官方 Paper 描述符的每个可见选项都能通过 Neovim UI 设置，并生成等价文件集合。
 

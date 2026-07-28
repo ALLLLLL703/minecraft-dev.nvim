@@ -53,8 +53,33 @@ local complex_types = {
 	parchment = true,
 }
 
-local function ask_property(descriptor, properties, callback)
+local function forced_value(descriptor, properties)
+	if type(descriptor.forceValue) ~= "table"
+		or not evaluator.expression(properties, descriptor.forceValue.condition or "false")
+	then
+		return false, nil
+	end
+	return true, evaluator.expression(properties, tostring(descriptor.forceValue.value))
+end
+
+local function ask_version_property(descriptor, properties, callback, on_child, is_pending, transform)
+	local operation, load_error = property_values.load(descriptor, function(values, err)
+		if not is_pending() then return end
+		if not values then callback(err and err.code == "cancelled", err) return end
+		vim.ui.select(values, { prompt = prompt("property", descriptor.label or descriptor.name) }, function(value)
+			if not is_pending() then return end
+			if value == nil then callback(true) else properties[descriptor.name] = transform and transform(value) or value callback(false) end
+		end)
+	end)
+	if operation then on_child(operation) end
+	if load_error then callback(false, load_error) end
+	return operation
+end
+
+local function ask_property(descriptor, properties, callback, on_child, is_pending)
 	if not visible(descriptor, properties) or descriptor.derives or descriptor.inheritFrom or descriptor.type == "jdk" then callback(false) return end
+	local has_forced_value, forced = forced_value(descriptor, properties)
+	if has_forced_value and descriptor.type ~= "gradle_plugin" then properties[descriptor.name] = forced callback(false) return end
 	if descriptor.type == "build_system_coordinates" then ask_coordinates(properties, callback) return end
 	if descriptor.options then
 		vim.ui.select(descriptor.options, { prompt = prompt("property", descriptor.label or descriptor.name) }, function(value)
@@ -69,22 +94,24 @@ local function ask_property(descriptor, properties, callback)
 		return
 	end
 	if descriptor.type == "paper_versions" then
-		local operation, load_error = property_values.load(descriptor, function(values, err)
-			if not values then callback(err and err.code == "cancelled", err) return end
-			vim.ui.select(values, { prompt = prompt("property", descriptor.label or descriptor.name) }, function(value)
-				if value == nil then callback(true) else properties[descriptor.name] = value callback(false) end
-			end)
-		end)
-		if load_error then callback(false, load_error) end
-		return operation
+		return ask_version_property(descriptor, properties, callback, on_child, is_pending)
+	end
+	if descriptor.type == "maven_artifact_version" then
+		return ask_version_property(descriptor, properties, callback, on_child, is_pending)
 	end
 	if descriptor.type == "gradle_plugin" then
-		vim.ui.select({ true, false }, { prompt = prompt("property", descriptor.label or descriptor.name), format_item = tostring }, function(enabled)
-			if enabled == nil then callback(true) return end
+		local function select_version(enabled)
+			if not is_pending() then return end
 			if not enabled then properties[descriptor.name] = { enabled = false } callback(false) return end
-			ask_input(prompt("property", descriptor.name .. " version"), nil, function(version, cancelled)
-				if cancelled then callback(true) else properties[descriptor.name] = { enabled = true, version = version } callback(false) end
+			ask_version_property(descriptor, properties, callback, on_child, is_pending, function(version)
+				return { enabled = true, version = version }
 			end)
+		end
+		if has_forced_value then select_version(not not forced) return end
+		vim.ui.select({ true, false }, { prompt = prompt("property", descriptor.label or descriptor.name), format_item = tostring }, function(enabled)
+			if not is_pending() then return end
+			if enabled == nil then callback(true) return end
+			select_version(enabled)
 		end)
 		return
 	end
@@ -116,12 +143,14 @@ local function collect(descriptor, properties, callback)
 	local function next_property(index)
 		if operation.status ~= "pending" then return end
 		if index > #descriptors then finish(properties, false) return end
-		active = ask_property(descriptors[index], properties, function(cancelled, err)
+		local previous_active = active
+		local property_operation = ask_property(descriptors[index], properties, function(cancelled, err)
 			active = nil
 			if err and err.code ~= "cancelled" then finish(nil, false, err)
 			elseif cancelled then finish(nil, true)
 			else next_property(index + 1) end
-		end)
+		end, function(child) active = child end, function() return operation.status == "pending" end)
+		if active == previous_active then active = property_operation end
 	end
 	function operation.cancel()
 		if operation.status ~= "pending" then return end

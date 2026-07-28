@@ -520,6 +520,141 @@ local function test_custom_paper_version_values()
 	vim.wait(1000, function() return cancelled ~= nil end, 10)
 	assert_equal(cancelled_operation.status, "cancelled", "Paper version cancellation should complete after curl exits")
 	assert_equal(cancelled.code, "cancelled", "Paper version cancellation should remain structured")
+
+	local metadata = [[<metadata><versioning><versions>
+<version>2.0.0-beta.9</version><version>2.0.0-beta.10</version><version>-</version>
+<version>1.0.0</version><version>2.0.0</version><version>3.0.0</version>
+</versions></versioning></metadata>]]
+	local maven_versions, metadata_error = custom_property_values.parse_maven_versions(metadata, 3)
+	assert_equal(metadata_error, nil, "valid Maven metadata should parse")
+	assert_equal(maven_versions, { "3.0.0", "2.0.0", "2.0.0-beta.10" }, "Maven versions should use semantic qualifier order and descriptor limits")
+	assert_equal(select(2, custom_property_values.parse_maven_versions(metadata, -1)).code, "property_limit_invalid", "negative Maven version limits should fail structurally")
+	local invalid_source_operation, invalid_source_error = custom_property_values.load({
+		type = "gradle_plugin",
+		parameters = { sourceUrl = "--config=/tmp/curl.conf" },
+	}, function() end, function() error("invalid source should not start curl") end)
+	assert_equal(invalid_source_operation, nil, "option-like Maven metadata URLs should be rejected")
+	assert_equal(invalid_source_error.code, "property_source_invalid", "invalid Maven metadata URLs should fail structurally")
+	local maven_command
+	local maven_result
+	local maven_operation, maven_error = custom_property_values.load({
+		type = "gradle_plugin",
+		parameters = { sourceUrl = "https://repo.example/plugin/maven-metadata.xml" },
+	}, function(values, err)
+		maven_result = { values = values, err = err }
+	end, function(command, _, callback)
+		maven_command = command
+		callback({ code = 0, stdout = metadata, stderr = "" })
+		return { kill = function() end }
+	end)
+	assert_equal(maven_error, nil, "Gradle plugin metadata loading should start")
+	vim.wait(1000, function() return maven_result ~= nil end, 10)
+	assert_equal(maven_operation.status, "generated", "Gradle plugin metadata loading should complete")
+	assert_equal(maven_result.values[1], "3.0.0", "Gradle plugin metadata loading should return the newest version")
+	assert_equal(maven_command[#maven_command], "https://repo.example/plugin/maven-metadata.xml", "Gradle plugin loading should use descriptor sourceUrl")
+end
+
+local function test_custom_paper_build_option_wizard()
+	local minecraft_dev = require("minecraft-dev")
+	local wizard = require("minecraft-dev.custom.wizard")
+	local original_list_templates = minecraft_dev.list_templates
+	local original_generate_template = minecraft_dev.generate_template
+	local original_load = custom_property_values.load
+	local original_input = vim.ui.input
+	local original_select = vim.ui.select
+	local generated_properties
+	local loaded = {}
+	local inputs = { "/tmp/paper-build-options", "paper-build-options" }
+	local plugin_parameters = { sourceUrl = "https://repo.example/maven-metadata.xml" }
+
+	minecraft_dev.list_templates = function(options)
+		options.callback({ {
+			label = "Paper",
+			group = "plugin",
+			descriptor = "bukkit/paper.mcdev.template.json",
+			definition = { properties = {
+				{ name = "LANGUAGE", type = "string", options = { "Java", "Kotlin" } },
+				{ name = "KOTLIN_VERSION", type = "maven_artifact_version", parameters = plugin_parameters },
+				{ name = "GREMLIN_PLUGIN", type = "gradle_plugin", parameters = plugin_parameters },
+				{
+					name = "SHADOW_PLUGIN", type = "gradle_plugin", parameters = plugin_parameters,
+					forceValue = { condition = "$LANGUAGE == 'Kotlin' || $GREMLIN_PLUGIN.enabled", value = "true" },
+				},
+				{
+					name = "INCLUDE_PLUGIN_LOADER", type = "boolean", default = false,
+					forceValue = { condition = "$GREMLIN_PLUGIN.enabled", value = "false" },
+				},
+			} },
+		} }, nil)
+		return { status = "generated", cancel = function() end }
+	end
+	minecraft_dev.generate_template = function(options)
+		generated_properties = options.properties
+		local result = { status = "generated" }
+		options.callback(result)
+		return { status = "generated", result = result, cancel = function() end }
+	end
+	custom_property_values.load = function(descriptor, callback)
+		table.insert(loaded, descriptor.name)
+		callback({ "3.0.0", "2.0.0" }, nil)
+		return { status = "generated", cancel = function() end }, nil
+	end
+	vim.ui.input = function(_, callback) callback(table.remove(inputs, 1)) end
+	vim.ui.select = function(items, _, callback)
+		if type(items[1]) == "table" then callback(items[1])
+		elseif items[1] == "Java" then callback("Kotlin")
+		elseif type(items[1]) == "boolean" then callback(true)
+		else callback(items[1]) end
+	end
+
+	local operation = wizard.run()
+	minecraft_dev.list_templates = original_list_templates
+	minecraft_dev.generate_template = original_generate_template
+	custom_property_values.load = original_load
+	vim.ui.input = original_input
+	vim.ui.select = original_select
+
+	assert_equal(operation.status, "generated", "Paper build option wizard should generate")
+	assert_equal(loaded, { "KOTLIN_VERSION", "GREMLIN_PLUGIN", "SHADOW_PLUGIN" }, "Paper build options should load descriptor metadata without manual version input")
+	assert_equal(generated_properties.KOTLIN_VERSION, "3.0.0", "Kotlin metadata version should be selected")
+	assert_equal(generated_properties.GREMLIN_PLUGIN, { enabled = true, version = "3.0.0" }, "Gremlin should retain its selected version")
+	assert_equal(generated_properties.SHADOW_PLUGIN, { enabled = true, version = "3.0.0" }, "Kotlin and Gremlin should force Shadow enabled while preserving version selection")
+	assert_equal(generated_properties.INCLUDE_PLUGIN_LOADER, false, "Gremlin should force the custom plugin loader off")
+
+	local template_root = vim.fn.tempname()
+	local destination = vim.fn.tempname()
+	local template_fs = require("minecraft-dev.util.fs")
+	vim.fn.mkdir(template_root, "p")
+	vim.fn.mkdir(destination, "p")
+	template_fs.write_file(template_root .. "/plugin.ft", [[${SHADOW_PLUGIN.enabled}|${SHADOW_PLUGIN.version}
+#if ($AUTHORS)
+authors
+#end
+]])
+	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		properties = {
+			{ name = "LANGUAGE", type = "string" },
+			{ name = "AUTHORS", type = "inline_string_list", default = "", nullIfDefault = true },
+			{
+				name = "SHADOW_PLUGIN", type = "gradle_plugin",
+				forceValue = { condition = "$LANGUAGE == 'Kotlin'", value = "true" },
+			},
+		},
+		files = { { template = "plugin.ft", destination = "plugin.txt" } },
+	}))
+	local result, err = generate_template({
+		provider = "local",
+		source = template_root,
+		directory = destination,
+		properties = { LANGUAGE = "Kotlin", AUTHORS = "", SHADOW_PLUGIN = { enabled = true, version = "3.0.0" } },
+	})
+	assert_truthy(result ~= nil, "forced Gradle plugin fixture should generate")
+	assert_equal(err, nil, "forced Gradle plugin fixture should not fail")
+	assert_equal(read_file(destination .. "/plugin.txt"), "true|3.0.0", "forceValue should preserve the selected Gradle plugin version during generation")
+	assert_equal(result.properties.AUTHORS, nil, "empty optional inline lists should normalize to nil")
+	vim.fn.delete(template_root, "rf")
+	vim.fn.delete(destination, "rf")
 end
 
 local function test_custom_paper_version_wizard()
@@ -658,6 +793,18 @@ wrong
 		"plugin yes 2.2.21",
 		"inline conditions and chained string methods should render"
 	)
+	assert_equal(
+		custom_evaluator.render({ AUTHORS = { "Alice", "Bob" } }, '${AUTHORS.toString(", ", "[", "]")}|${AUTHORS.toStringQuoted()}|${version}|$description'),
+		'[Alice, Bob]|"Alice", "Bob"|${version}|$description',
+		"StringList methods should render while build-system placeholders remain intact"
+	)
+	assert_equal(
+		custom_evaluator.render({ AUTHORS = { "Alice", "Bob" } }, [[${AUTHORS.toString('", "', '"', '"')}]]),
+		'"Alice", "Bob"',
+		"StringList arguments should close with their matching quote delimiter"
+	)
+	assert_equal(custom_evaluator.render({ DESCRIPTION = "present" }, "value#if ($DESCRIPTION), description#end"), "value, description", "truthy inline conditions should render without else")
+	assert_equal(custom_evaluator.render({ DESCRIPTION = nil }, "value#if ($DESCRIPTION), description#end"), "value", "false inline conditions should render without else")
 end
 
 local function test_custom_archive_provider()
@@ -1705,6 +1852,7 @@ local function run()
 	test_architectury_generation()
 	test_custom_v3_local_template()
 	test_custom_paper_version_values()
+	test_custom_paper_build_option_wizard()
 	test_custom_paper_version_wizard()
 	test_custom_paper_derivations()
 	test_custom_template_discovery()

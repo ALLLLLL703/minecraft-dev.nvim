@@ -80,6 +80,32 @@ end
 
 local evaluate
 
+local function parse_string_arguments(input)
+	local arguments = {}
+	local index = 1
+	while index <= #input do
+		while input:sub(index, index):match("[%s,]") do index = index + 1 end
+		if index > #input then break end
+		local quote = input:sub(index, index)
+		if quote ~= '"' and quote ~= "'" then return nil end
+		local value = {}
+		index = index + 1
+		while index <= #input and input:sub(index, index) ~= quote do
+			local character = input:sub(index, index)
+			if character == "\\" and index < #input then
+				index = index + 1
+				character = input:sub(index, index)
+			end
+			table.insert(value, character)
+			index = index + 1
+		end
+		if input:sub(index, index) ~= quote then return nil end
+		table.insert(arguments, table.concat(value))
+		index = index + 1
+	end
+	return arguments
+end
+
 evaluate = function(properties, expression)
 	expression = strip_parentheses(trim(expression))
 	local class_reference, subpackage_expression, class_field = expression:match("^%$([%w_%.]+)%.withSubPackage%((.-)%)%.([%w_]+)$")
@@ -102,6 +128,20 @@ evaluate = function(properties, expression)
 		separator = tostring(evaluate(properties, separator))
 		local parts = vim.split(value, separator, { plain = true })
 		return parts[tonumber(requested_index) + 1]
+	end
+	local quoted_list = expression:match("^%$([%w_%.]+)%.toStringQuoted%(%)$")
+	if quoted_list then
+		local values = resolve(properties, quoted_list)
+		if type(values) ~= "table" then return "" end
+		return table.concat(vim.tbl_map(function(value) return '"' .. tostring(value) .. '"' end, values), ", ")
+	end
+	local list_reference, list_arguments = expression:match("^%$([%w_%.]+)%.toString%((.*)%)$")
+	if list_reference then
+		local values = resolve(properties, list_reference)
+		if type(values) ~= "table" then return "" end
+		local arguments = parse_string_arguments(list_arguments)
+		if not arguments then return "" end
+		return (arguments[2] or "") .. table.concat(vim.tbl_map(tostring, values), arguments[1] or ", ") .. (arguments[3] or "")
 	end
 	for _, operator in ipairs({ "||", "&&", "==", "!=", ">=", "<=", ">", "<" }) do
 		local index = find_operator(expression, operator)
@@ -152,7 +192,7 @@ end
 function M.interpolate(properties, content)
 	content = content:gsub("%${(.-)}", function(reference)
 		local value = M.expression(properties, "$" .. reference)
-		return stringify(value)
+		return value == nil and "${" .. reference .. "}" or stringify(value)
 	end)
 	content = content:gsub("%$([%a_][%w_%.]*)", function(reference)
 		local value = resolve(properties, reference)
@@ -163,11 +203,15 @@ end
 
 local function render_inline(properties, content)
 	for _ = 1, 100 do
-		local replaced = 0
-		content, replaced = content:gsub("#if%s*%(([^()\n]*)%)%s*([^\n]-)#else%s*([^\n]-)#end", function(condition, truthy, falsy)
+		local with_else
+		content, with_else = content:gsub("#if%s*%(([^()\n]*)%)%s*([^\n]-)#else%s*([^\n]-)#end", function(condition, truthy, falsy)
 			return M.expression(properties, condition) and truthy or falsy
 		end)
-		if replaced == 0 then break end
+		local without_else
+		content, without_else = content:gsub("#if%s*%(([^()\n]*)%)%s*([^\n]-)#end", function(condition, truthy)
+			return M.expression(properties, condition) and truthy or ""
+		end)
+		if with_else == 0 and without_else == 0 then break end
 	end
 	return content
 end

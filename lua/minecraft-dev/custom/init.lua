@@ -141,7 +141,12 @@ local function collect_properties(descriptor, provided)
 		if type(property.forceValue) == "table"
 			and evaluator.expression(properties, property.forceValue.condition or "false")
 		then
-			properties[property.name] = evaluator.expression(properties, tostring(property.forceValue.value))
+			local forced = evaluator.expression(properties, tostring(property.forceValue.value))
+			if property.type == "gradle_plugin" and type(properties[property.name]) == "table" then
+				properties[property.name].enabled = not not forced
+			else
+				properties[property.name] = forced
+			end
 		end
 		if property.type == "class_fqn" and properties[property.name] ~= nil then
 			properties[property.name] = class_fqn(properties[property.name])
@@ -152,7 +157,11 @@ local function collect_properties(descriptor, provided)
 		elseif property.type == "gradle_plugin" and type(properties[property.name]) ~= "table" then
 			properties[property.name] = { enabled = not not properties[property.name], version = property.parameters and property.parameters.version }
 		end
-		if property.nullIfDefault and vim.deep_equal(properties[property.name], property.default) then
+		local empty_inline_list = property.type == "inline_string_list"
+			and property.default == ""
+			and type(properties[property.name]) == "table"
+			and #properties[property.name] == 0
+		if property.nullIfDefault and (empty_inline_list or vim.deep_equal(properties[property.name], property.default)) then
 			properties[property.name] = nil
 		end
 		if property.validator and properties[property.name] ~= nil then

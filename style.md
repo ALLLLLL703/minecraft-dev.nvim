@@ -128,3 +128,11 @@ require("minecraft-dev").generate({
 - Paper API 版本在 1.20.5 前派生 major/minor，1.20.5 起保留完整 Minecraft 版本；26.1 起依赖坐标按 Gradle/Maven 分别使用 `.build.+` 与 `[.build,)`。
 - Java 版本派生与上游统一为 8/16/17/21/25，确保动态列表新增的 26.x 项目不会继续使用 Java 21。
 - 网络实现复用现有 `curl` 与 `vim.system` 异步边界，不增加 HTTP 或 XML 依赖。版本响应解析和派生规则使用确定性 fixture 测试，另执行真实 Fill API 选择器检查。
+
+## 当前实现切片：P1.1 Paper 构建插件选择
+
+- `maven_artifact_version` 与 `gradle_plugin` 共用 descriptor `sourceUrl` 的异步 Maven metadata 加载，向导使用 `vim.ui.select` 选择版本，不再要求手工输入版本。
+- `forceValue` 在属性展示前求值：普通属性直接采用强制值；Gradle 插件只锁定 enabled 状态，仍允许选择具体版本。
+- 保持 `curl`/`vim.system` 生命周期与 Paper Fill selector 一致，并覆盖 metadata 成功、失败、取消、强制 Shadow 与 Gremlin 强制关闭 loader 场景。
+- 已评估 `xml2lua`、SLAXML 和 Lua-Simple-XML-Parser；Maven metadata 只需读取重复的 `<version>` 文本节点，引入完整 XML 依赖会增加安装和运行时负担，因此使用不执行实体、不构建 DOM 的窄解析器。
+- 使用实际上游 Paper descriptor 生成并构建最大 Gradle 组合：Kotlin、version catalog、Gremlin、run-paper、Shadow、paperweight-userdev、resource-factory、Paper manifest、bootstrap、EULA 和 run 配置；JDK 21 下 `./gradlew build` 通过。
