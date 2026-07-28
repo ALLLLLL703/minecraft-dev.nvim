@@ -10,15 +10,15 @@ local M = {}
 
 ---@param project_path string
 ---@param version string
-function M.generate(project_path, version, language, spec)
+function M.generate(project_path, version, language, spec, platform_name)
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
 	local result
 	options.with_language(language, function(selected_language)
 		if version_util.resolve_family(mc_version) == "v1_13_plus" then
-			result = M.generate_higher(project_path, mc_version, selected_language, spec)
+			result = M.generate_higher(project_path, mc_version, selected_language, spec, platform_name)
 			return
 		end
-		result = M.generate_lower(project_path, mc_version, selected_language, spec)
+		result = M.generate_lower(project_path, mc_version, selected_language, spec, platform_name)
 	end)
 	return result
 end
@@ -50,7 +50,7 @@ end
 
 ---@param project_path string
 ---@param version string
-function M.generate_higher(project_path, version, language, spec)
+function M.generate_higher(project_path, version, language, spec, platform_name)
 	local path = project_path or vim.fn.getcwd()
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
 	local lang = language or require("minecraft-dev").config.defaults.paper.language
@@ -67,7 +67,7 @@ function M.generate_higher(project_path, version, language, spec)
 	fs.mkdir(resources_dir)
 
 	local pom_template = templates.read("maven", "v1_13_plus/pom.xml", lang)
-	pom_template = bukkit_platform.transform_maven(pom_template, spec and spec.platform or "paper", ctx.version)
+	pom_template = bukkit_platform.transform_maven(pom_template, platform_name or (spec and spec.platform) or "paper", ctx.version)
 	local pom_content = string.format(pom_template, ctx.groupId, ctx.artifactId, ctx.artifactId, ctx.version)
 	fs.write_file(path_util.join(path, "pom.xml"), pom_content)
 
@@ -83,7 +83,7 @@ end
 
 ---@param project_path string
 ---@param version string
-function M.generate_lower(project_path, version, language, spec)
+function M.generate_lower(project_path, version, language, spec, platform_name)
 	local path = project_path or vim.fn.getcwd()
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
 	local lang = language or require("minecraft-dev").config.defaults.paper.language
@@ -100,7 +100,7 @@ function M.generate_lower(project_path, version, language, spec)
 	fs.mkdir(resources_dir)
 
 	local pom_template = templates.read("maven", "v1_8/pom.xml", lang)
-	pom_template = bukkit_platform.transform_maven(pom_template, spec and spec.platform or "paper", ctx.version)
+	pom_template = bukkit_platform.transform_maven(pom_template, platform_name or (spec and spec.platform) or "paper", ctx.version)
 	local pom_content = string.format(pom_template, ctx.groupId, ctx.artifactId, ctx.artifactId, ctx.version)
 	fs.write_file(path_util.join(path, "pom.xml"), pom_content)
 

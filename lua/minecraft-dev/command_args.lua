@@ -10,7 +10,7 @@ local M = {}
 ---@return MinecraftDevCommandArgs?, string?
 function M.parse(args)
 	local argv = vim.split(args or "", "%s+", { trimempty = true })
-	if #argv < 3 then
+	if #argv < 3 or #argv > 4 then
 		return nil, "invalid_args"
 	end
 

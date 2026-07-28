@@ -47,7 +47,7 @@ require("minecraft-dev").generate({
 })
 ```
 
-`generate` 接收完整规范，返回异步任务句柄或结构化错误。`:GmcPro` 保持兼容，并在参数不足时进入向导。后续增加的字段不通过继续扩展位置参数表达。
+`generate` 接收完整规范，返回异步任务句柄或结构化错误。`:GmcPro` 保持兼容，并在无参数时进入向导。后续增加的字段不通过继续扩展位置参数表达。
 
 ## TDD 与场景验证
 
@@ -106,3 +106,9 @@ require("minecraft-dev").generate({
 - 原生项目和官方模板都先写入目标同级 staging；wrapper、网络和 finalizer 全部成功后才迁移到目标目录。
 - 取消只请求终止活动子进程；子进程退出并清理 staging 后才触发一次最终回调。
 - 网络回退作为成功结果的 `warnings` 返回，不再同时表达“成功”和“错误”。
+
+## 当前实现切片：P0.4 命令入口
+
+- `:GmcPro` 的补全由平台注册表中的 command capability 派生，只列出位置参数可以完整生成的平台。
+- Forge、NeoForge 和 Architectury 返回 `interactive_only`，通过无参数向导收集完整版本集合。
+- `:GmcPro` 无参数与 `:MinecraftDevNew` 共用同一向导 operation，选择取消和主动取消均返回 `cancelled`。

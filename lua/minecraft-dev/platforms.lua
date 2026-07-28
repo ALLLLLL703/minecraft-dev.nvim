@@ -4,42 +4,52 @@ local registry = {
 	architectury = {
 		build_systems = { "gradle" },
 		generator = "minecraft-dev.generators.architectury",
+		command = false,
 	},
 	bungeecord = {
 		build_systems = { "gradle", "maven" },
 		generator = "minecraft-dev.generators.plugin",
+		command = true,
 	},
 	fabric = {
 		build_systems = { "gradle" },
 		generator = "minecraft-dev.generators.fabric",
+		command = true,
 	},
 	forge = {
 		build_systems = { "gradle" },
 		generator = "minecraft-dev.generators.forge",
+		command = false,
 	},
 	neoforge = {
 		build_systems = { "gradle" },
 		generator = "minecraft-dev.generators.forge",
+		command = false,
 	},
 	paper = {
 		build_systems = { "gradle", "maven" },
 		generator = "minecraft-dev.generators.paper",
+		command = true,
 	},
 	spigot = {
 		build_systems = { "gradle", "maven" },
 		generator = "minecraft-dev.generators.paper",
+		command = true,
 	},
 	sponge = {
 		build_systems = { "gradle", "maven" },
 		generator = "minecraft-dev.generators.plugin",
+		command = true,
 	},
 	velocity = {
 		build_systems = { "gradle", "maven" },
 		generator = "minecraft-dev.generators.plugin",
+		command = true,
 	},
 	waterfall = {
 		build_systems = { "gradle", "maven" },
 		generator = "minecraft-dev.generators.plugin",
+		command = true,
 	},
 }
 
@@ -48,6 +58,23 @@ function M.names()
 	local names = vim.tbl_keys(registry)
 	table.sort(names)
 	return names
+end
+
+---@return string[]
+function M.command_names()
+	local names = {}
+	for name, platform in pairs(registry) do
+		if platform.command then table.insert(names, name) end
+	end
+	table.sort(names)
+	return names
+end
+
+---@param name string
+---@return boolean
+function M.supports_command(name)
+	local platform = M.get(name)
+	return platform ~= nil and platform.command == true
 end
 
 ---@param name string

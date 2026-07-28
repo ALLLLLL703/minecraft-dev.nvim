@@ -1,4 +1,6 @@
 local command_args = require("minecraft-dev.command_args")
+local command = require("minecraft-dev.command")
+local completion = require("minecraft-dev.completion")
 local config = require("minecraft-dev.config")
 local metadata = require("minecraft-dev.generators.fabric.metadata")
 local paper_templates = require("minecraft-dev.generators.paper.templates")
@@ -37,8 +39,207 @@ local function test_command_parse_failure()
 	assert_equal(err, "invalid_args", "parse should report invalid args")
 end
 
+local function test_command_entrypoints()
+	local command_platforms = { "bungeecord", "fabric", "paper", "spigot", "sponge", "velocity", "waterfall" }
+	assert_equal(platforms.command_names(), command_platforms, "command registry should only expose positional-compatible platforms")
+	assert_equal(completion.complete("", "GmcPro "), command_platforms, "first argument completion should expose command platforms")
+	assert_equal(completion.complete("pa", "GmcPro pa"), { "paper" }, "platform completion should filter by argument lead")
+	assert_equal(completion.complete("", "GmcPro paper "), { "gradle", "maven" }, "second argument completion should expose platform builds")
+	assert_equal(completion.complete("pa", "GmcPro pa gradle", 9), { "paper" }, "completion should use the cursor position when editing mid-line")
+
+	local generator_modules = {}
+	for _, platform_name in ipairs(command_platforms) do
+		generator_modules[platforms.get(platform_name).generator] = true
+	end
+	local originals = {}
+	local calls = {}
+	for module in pairs(generator_modules) do
+		originals[module] = package.loaded[module] or false
+		package.loaded[module] = {
+			run = function(build, path, version, _, platform_name)
+				calls[platform_name] = { build = build, path = path, version = version }
+				return true
+			end,
+		}
+	end
+	for _, platform_name in ipairs(command_platforms) do
+		local build = platforms.build_systems(platform_name)[1]
+		local result = command.dispatch(string.format("%s %s 1.21.1 /tmp/%s", platform_name, build, platform_name))
+		assert_equal(result.status, "started", platform_name .. " should start from positional command arguments")
+		assert_equal(calls[platform_name].build, build, platform_name .. " should dispatch its selected build")
+	end
+	for module, original in pairs(originals) do package.loaded[module] = original ~= false and original or nil end
+	local spigot_directory = vim.fn.tempname()
+	vim.fn.mkdir(spigot_directory, "p")
+	local original_input = vim.fn.input
+	local input_values = { "com.example", "spigot-command", "SpigotCommand" }
+	vim.fn.input = function() return table.remove(input_values, 1) end
+	local spigot_result = require("minecraft-dev.generators.paper.maven").generate(
+		spigot_directory,
+		"1.21.1",
+		"java",
+		nil,
+		"spigot"
+	)
+	vim.fn.input = original_input
+	assert_equal(spigot_result, true, "interactive Spigot command generation should complete")
+	local spigot_pom = table.concat(vim.fn.readfile(spigot_directory .. "/pom.xml"), "\n")
+	assert_truthy(spigot_pom:find("spigot-api", 1, true) ~= nil, "Spigot command generation should preserve its platform")
+	vim.fn.delete(spigot_directory, "rf")
+
+	for _, platform_name in ipairs({ "architectury", "forge", "neoforge" }) do
+		local result = command.dispatch(platform_name .. " gradle 1.21.1 /tmp/example")
+		assert_equal(result.status, "failed", platform_name .. " positional dispatch should fail cleanly")
+		assert_equal(result.error.code, "interactive_only", platform_name .. " should direct callers to the wizard")
+	end
+	assert_equal(command.dispatch("paper").error.code, "invalid_args", "partial positional arguments should remain invalid")
+	assert_equal(command.dispatch("unknown gradle 1.21.1").error.code, "unsupported_project", "unknown platforms should remain structured")
+	assert_equal(command.dispatch("fabric maven 1.21.1").error.code, "unsupported_build", "invalid platform builds should remain structured")
+	assert_equal(command.dispatch("paper gradle 1.21.1 /tmp/example extra").error.code, "invalid_args", "surplus positional arguments should be rejected")
+
+	local wizard_module = "minecraft-dev.custom.wizard"
+	local original_wizard = package.loaded[wizard_module]
+	local wizard_count = 0
+	package.loaded[wizard_module] = {
+		run = function()
+			wizard_count = wizard_count + 1
+			return { status = "cancelled", result = { status = "cancelled" } }
+		end,
+	}
+	assert_equal(command.dispatch("").status, "cancelled", "empty GmcPro dispatch should preserve wizard cancellation")
+	command.setup()
+	vim.cmd("GmcPro")
+	vim.cmd("MinecraftDevNew")
+	assert_equal(wizard_count, 3, "GmcPro and MinecraftDevNew should share the same wizard entrypoint")
+	package.loaded[wizard_module] = original_wizard
+end
+
+local function test_wizard_cancellation()
+	local minecraft_dev = require("minecraft-dev")
+	local wizard = require("minecraft-dev.custom.wizard")
+	local original_list_templates = minecraft_dev.list_templates
+	local original_select = vim.ui.select
+	local callback_count = 0
+	minecraft_dev.list_templates = function(options)
+		options.callback({ {
+			label = "Paper",
+			group = "plugin",
+			descriptor = "paper/.mcdev.template.json",
+			definition = { properties = {} },
+		} }, nil)
+		local result = { status = "generated" }
+		return { status = "generated", result = result, on_complete = function(completion_callback) completion_callback(result) end }
+	end
+	vim.ui.select = function(_, _, select_callback) select_callback(nil) end
+	local cancelled = wizard.run(function(result)
+		callback_count = callback_count + 1
+		assert_equal(result.status, "cancelled", "wizard callback should preserve selection cancellation")
+	end)
+	assert_equal(cancelled.status, "cancelled", "wizard selection cancellation should be final")
+	vim.wait(1000, function() return callback_count == 1 end, 10)
+	assert_equal(callback_count, 1, "wizard selection cancellation should callback exactly once")
+
+	local list_child = { callbacks = {} }
+	function list_child.on_complete(completion_callback) table.insert(list_child.callbacks, completion_callback) end
+	function list_child.cancel() list_child.cancelled = true end
+	minecraft_dev.list_templates = function() return list_child end
+	local active = wizard.run()
+	active.cancel()
+	assert_equal(active.status, "pending", "wizard cancellation should wait for active provider exit")
+	assert_equal(list_child.cancelled, true, "wizard cancellation should cancel template discovery")
+	for _, completion_callback in ipairs(list_child.callbacks) do completion_callback({ status = "cancelled" }) end
+	assert_equal(active.status, "cancelled", "wizard cancellation should finish after provider exit")
+
+	local list_callback
+	local generation_child = { callbacks = {} }
+	function generation_child.on_complete(completion_callback) table.insert(generation_child.callbacks, completion_callback) end
+	function generation_child.cancel() generation_child.cancelled = true end
+	minecraft_dev.list_templates = function(options)
+		list_callback = options.callback
+		return { status = "pending", on_complete = function() end, cancel = function() end }
+	end
+	local original_generate_template = minecraft_dev.generate_template
+	minecraft_dev.generate_template = function(options)
+		generation_child.template_callback = options.callback
+		return generation_child
+	end
+	local input_values = { vim.fn.tempname(), "wizard-project" }
+	local original_input = vim.ui.input
+	vim.ui.select = function(items, _, select_callback) select_callback(items[1]) end
+	vim.ui.input = function(_, input_callback) input_callback(table.remove(input_values, 1)) end
+	local notify_module = require("minecraft-dev.util.notify")
+	local original_notify = notify_module.notify
+	local error_notifications = 0
+	notify_module.notify = function(level, ...)
+		if level == vim.log.levels.ERROR then error_notifications = error_notifications + 1 end
+		return original_notify(level, ...)
+	end
+	local generating = wizard.run()
+	list_callback({ {
+		label = "Paper",
+		group = "plugin",
+		descriptor = "paper/.mcdev.template.json",
+		definition = { properties = {} },
+	} }, nil)
+	assert_equal(generating.status, "pending", "wizard should remain pending during template generation")
+	generating.cancel()
+	assert_equal(generation_child.cancelled, true, "wizard cancellation should cancel template generation")
+	local cancelled_result = { status = "cancelled" }
+	generation_child.template_callback(cancelled_result)
+	for _, completion_callback in ipairs(generation_child.callbacks) do completion_callback(cancelled_result) end
+	assert_equal(generating.status, "cancelled", "wizard should preserve template generation cancellation")
+	assert_equal(error_notifications, 0, "template cancellation should not emit a failure notification")
+	notify_module.notify = original_notify
+	minecraft_dev.generate_template = original_generate_template
+	vim.ui.input = original_input
+	minecraft_dev.list_templates = original_list_templates
+	vim.ui.select = original_select
+end
+
 local function read_file(path)
 	return table.concat(vim.fn.readfile(path), "\n")
+end
+
+local function test_command_platform_generation()
+	local paper_options = require("minecraft-dev.generators.paper.options")
+	local fabric_options = require("minecraft-dev.generators.fabric.options")
+	local original_with_language = paper_options.with_language
+	local original_collect = fabric_options.collect
+	local original_generate_gradlew = gradle.generate_gradlew
+	local original_input = vim.fn.input
+	paper_options.with_language = function(_, callback) callback("java") end
+	fabric_options.collect = function(callback)
+		callback({ language = "java", side = "both", generate_datagen = true, use_mixins = true })
+	end
+	gradle.generate_gradlew = function() return true end
+
+	local cases = {
+		{ platform = "paper", build = "maven", version = "1.21.1", file = "pom.xml", marker = "paper-api", metadata = "src/main/resources/plugin.yml" },
+		{ platform = "spigot", build = "maven", version = "1.21.1", file = "pom.xml", marker = "spigot-api", metadata = "src/main/resources/plugin.yml" },
+		{ platform = "bungeecord", build = "maven", version = "1.21", file = "pom.xml", marker = "bungeecord-api", metadata = "src/main/resources/bungee.yml" },
+		{ platform = "waterfall", build = "maven", version = "1.21", file = "pom.xml", marker = "waterfall-api", metadata = "src/main/resources/bungee.yml" },
+		{ platform = "velocity", build = "maven", version = "3.5.0-SNAPSHOT", file = "pom.xml", marker = "velocity-api" },
+		{ platform = "sponge", build = "maven", version = "12.0.0", file = "pom.xml", marker = "spongeapi", metadata = "src/main/resources/META-INF/sponge_plugins.json" },
+		{ platform = "fabric", build = "gradle", version = "1.21.1", file = "build.gradle", marker = "fabric-api", metadata = "src/main/resources/fabric.mod.json" },
+	}
+	for _, case in ipairs(cases) do
+		local directory = vim.fn.tempname()
+		vim.fn.mkdir(directory, "p")
+		local input_values = { "com.example", "commandtest", "CommandTest" }
+		vim.fn.input = function() return table.remove(input_values, 1) end
+		local result = command.dispatch(string.format("%s %s %s %s", case.platform, case.build, case.version, directory))
+		assert_equal(result.status, "started", case.platform .. " command generation should start")
+		assert_truthy(read_file(directory .. "/" .. case.file):find(case.marker, 1, true) ~= nil, case.platform .. " command generation should use its platform dependency")
+		if case.metadata then
+			assert_equal(vim.fn.filereadable(directory .. "/" .. case.metadata), 1, case.platform .. " command generation should write metadata")
+		end
+		vim.fn.delete(directory, "rf")
+	end
+
+	paper_options.with_language = original_with_language
+	fabric_options.collect = original_collect
+	gradle.generate_gradlew = original_generate_gradlew
+	vim.fn.input = original_input
 end
 
 local function generate_project(spec)
@@ -1227,6 +1428,9 @@ local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
 	test_command_parse_failure()
+	test_command_entrypoints()
+	test_wizard_cancellation()
+	test_command_platform_generation()
 	test_platform_registry()
 	test_architectury_generation()
 	test_custom_v3_local_template()

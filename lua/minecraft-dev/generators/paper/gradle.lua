@@ -12,17 +12,17 @@ local M = {}
 --- generate entry
 ---@param project_path string
 ---@param version string
-function M.generate(project_path, version, language, spec)
+function M.generate(project_path, version, language, spec, platform_name)
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
 	local operation
 	options.with_language(language, function(selected_language)
 		local family = version_util.resolve_family(mc_version)
 
 		if family == "v1_13_plus" then
-			operation = M.generate_higher(project_path, mc_version, selected_language, spec)
+			operation = M.generate_higher(project_path, mc_version, selected_language, spec, platform_name)
 			return
 		end
-		operation = M.generate_lower(project_path, mc_version, selected_language, spec)
+		operation = M.generate_lower(project_path, mc_version, selected_language, spec, platform_name)
 	end)
 	return operation
 end
@@ -52,7 +52,7 @@ end
 
 ---@param project_path string
 ---@param version string
-function M.generate_higher(project_path, version, language, spec)
+function M.generate_higher(project_path, version, language, spec, platform_name)
 	local path = project_path or vim.fn.getcwd()
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
 	local lang = language or require("minecraft-dev").config.defaults.paper.language
@@ -68,7 +68,7 @@ function M.generate_higher(project_path, version, language, spec)
 	fs.mkdir(resources_dir)
 
 	local build_gradle_template = templates.read("gradle", "v1_13_plus/build.gradle.kts", lang)
-	build_gradle_template = bukkit_platform.transform_gradle(build_gradle_template, spec and spec.platform or "paper", ctx.version)
+	build_gradle_template = bukkit_platform.transform_gradle(build_gradle_template, platform_name or (spec and spec.platform) or "paper", ctx.version)
 	local plugin_version = spec and spec.plugin_version or "1.0.0"
 	fs.write_file(
 		path_util.join(path, "build.gradle.kts"),
@@ -91,7 +91,7 @@ end
 
 ---@param project_path string
 ---@param version string
-function M.generate_lower(project_path, version, language, spec)
+function M.generate_lower(project_path, version, language, spec, platform_name)
 	local path = project_path or vim.fn.getcwd()
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
 	local lang = language or require("minecraft-dev").config.defaults.paper.language
@@ -107,7 +107,7 @@ function M.generate_lower(project_path, version, language, spec)
 	fs.mkdir(resources_dir)
 
 	local build_gradle_template = templates.read("gradle", "1.13-/build.gradle", lang)
-	build_gradle_template = bukkit_platform.transform_gradle(build_gradle_template, spec and spec.platform or "paper", ctx.version)
+	build_gradle_template = bukkit_platform.transform_gradle(build_gradle_template, platform_name or (spec and spec.platform) or "paper", ctx.version)
 	local plugin_version = spec and spec.plugin_version or "1.0.0"
 	fs.write_file(
 		path_util.join(path, "build.gradle"),

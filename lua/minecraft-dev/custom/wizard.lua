@@ -104,40 +104,71 @@ local function collect(descriptor, properties, callback)
 	next_property(1)
 end
 
-local function generate(template, directory, properties)
-	require("minecraft-dev").generate_template({
+local function generate(template, directory, properties, callback)
+	return require("minecraft-dev").generate_template({
 		provider = "builtin",
 		descriptor = template.descriptor,
 		directory = directory,
 		properties = properties,
 		use_git = properties.USE_GIT,
 		callback = function(result)
-			if result.status ~= "generated" then notify.notify(vim.log.levels.ERROR, { "custom", "generation_failed" }, vim.inspect(result.error)) return end
-			notify.notify(vim.log.levels.INFO, { "custom", "generated" }, directory)
+			if result.status == "failed" then
+				notify.notify(vim.log.levels.ERROR, { "custom", "generation_failed" }, vim.inspect(result.error))
+			elseif result.status == "generated" then
+				notify.notify(vim.log.levels.INFO, { "custom", "generated" }, directory)
+			end
+			callback(result)
 		end,
 	})
 end
 
-function M.run()
-	require("minecraft-dev").list_templates({
+function M.run(callback)
+	local operation = { status = "pending" }
+	local child
+	local function finish(result)
+		if operation.status ~= "pending" then return end
+		operation.status = result.status
+		operation.result = result
+		if callback then vim.schedule(function() callback(result) end) end
+	end
+	function operation.cancel()
+		if operation.status ~= "pending" or operation.cancel_requested then return end
+		operation.cancel_requested = true
+		if child and child.on_complete then child.on_complete(function() finish({ status = "cancelled" }) end) end
+		if child and child.cancel then child.cancel() else finish({ status = "cancelled" }) end
+	end
+	local list_error
+	child, list_error = require("minecraft-dev").list_templates({
 		provider = "builtin",
 		callback = function(templates, err)
-			if not templates then notify.notify(vim.log.levels.ERROR, { "custom", "list_failed" }, vim.inspect(err)) return end
+			if operation.status ~= "pending" then return end
+			if not templates then
+				notify.notify(vim.log.levels.ERROR, { "custom", "list_failed" }, vim.inspect(err))
+				finish({ status = "failed", error = err })
+				return
+			end
 			vim.ui.select(templates, { prompt = prompt("select_template"), format_item = function(item) return string.format("[%s] %s", item.group, item.label) end }, function(template)
-				if not template then return end
+				if operation.status ~= "pending" then return end
+				if not template then finish({ status = "cancelled" }); return end
 				ask_input(prompt("directory"), vim.fn.getcwd(), function(directory, directory_cancelled)
-					if directory_cancelled then return end
+					if operation.status ~= "pending" then return end
+					if directory_cancelled then finish({ status = "cancelled" }); return end
 					ask_input(prompt("project_name"), vim.fs.basename(directory), function(project_name, name_cancelled)
-						if name_cancelled then return end
+						if operation.status ~= "pending" then return end
+						if name_cancelled then finish({ status = "cancelled" }); return end
 						local properties = { PROJECT_NAME = project_name, USE_GIT = false }
 						collect(template.definition, properties, function(values, cancelled)
-							if not cancelled then generate(template, directory, values) end
+							if operation.status ~= "pending" then return end
+							if cancelled then finish({ status = "cancelled" }); return end
+							child = generate(template, directory, values, finish)
 						end)
 					end)
 				end)
 			end)
 		end,
 	})
+	if list_error then finish({ status = "failed", error = list_error }) end
+	return operation
 end
 
 return M

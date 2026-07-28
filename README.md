@@ -76,12 +76,15 @@ require("minecraft-dev").setup({
 ```
 and use the command
 ```vim
-GmcPro [fabric|paper] [gradle|maven] version_minecraft [path/to/the/place/your/want/to/init/your/project]
+GmcPro
+GmcPro [bungeecord|fabric|paper|spigot|sponge|velocity|waterfall] [gradle|maven] minecraft_version [path]
 MinecraftDevNew
 ```
 
-`MinecraftDevNew` opens the builtin Neovim UI wizard backed by the official MinecraftDev template repository. Complex
-version properties are entered as JSON objects; prompts and messages remain configurable through `setup()`.
+`:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
+MinecraftDev template repository. Forge, NeoForge, and Architectury require this wizard because their complete version
+sets do not fit the positional command. Complex version properties are entered as JSON objects; prompts and messages
+remain configurable through `setup()`. Cancelling a wizard selection aborts generation without creating a project.
 
 When generating a Fabric project, the plugin now asks for:
 

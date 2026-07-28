@@ -74,9 +74,11 @@ M.default_config = {
 			invalid_json = "Invalid JSON value for %s",
 		},
 		command = {
-			invalid_args = "Usage: GmcPro [fabric|paper] [gradle|maven] <minecraft_version> [path]",
+			invalid_args = "Usage: GmcPro [platform build minecraft_version [path]]",
 			unsupported_project = "Unsupported project type: %s",
 			unsupported_build = "Unsupported build tool: %s",
+			interactive_only = "%s requires the project wizard; run :GmcPro without arguments.",
+			generation_failed = "Failed to start project generation: %s",
 		},
 		reload = {
 			success = "Successfully reloaded minecraft-dev!",
