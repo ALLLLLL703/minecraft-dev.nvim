@@ -1,4 +1,5 @@
 local M = {}
+M.versions = { gradle = "8.10.1", loom = "1.6-SNAPSHOT" }
 local fs = require("minecraft-dev.util.fs")
 local gradle = require("minecraft-dev.util.gradle")
 local path = require("minecraft-dev.util.path")
@@ -16,7 +17,7 @@ end
 local function root_build(spec)
 	return string.format([[plugins {
     id 'architectury-plugin' version '3.4-SNAPSHOT'
-	id 'dev.architectury.loom' version '1.6-SNAPSHOT' apply false
+	id 'dev.architectury.loom' version '%s' apply false
 }
 architectury { minecraft = %s }
 allprojects {
@@ -32,7 +33,7 @@ subprojects {
     dependencies { minecraft 'com.mojang:minecraft:%s'; mappings loom.officialMojangMappings() }
     java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
-]], quote(spec.minecraft_version), quote(spec.group_id), quote(spec.plugin_version or "1.0.0"), quote(spec.artifact_id), spec.minecraft_version)
+]], M.versions.loom, quote(spec.minecraft_version), quote(spec.group_id), quote(spec.plugin_version or "1.0.0"), quote(spec.artifact_id), spec.minecraft_version)
 end
 
 local function common_build(spec)
@@ -134,7 +135,7 @@ function M.run(_, project_path, _, spec)
 	write(root, "forge/src/main/java/" .. package_path .. "/forge/" .. spec.main_class .. "Forge.java", string.format("package %s.forge;\n\nimport net.minecraftforge.fml.common.Mod;\nimport %s.%s;\n\n@Mod(%s)\npublic final class %sForge {\n    public %sForge() { %s.init(); }\n}\n", spec.package_name, spec.package_name, spec.main_class, quote(spec.artifact_id), spec.main_class, spec.main_class, spec.main_class))
 	write(root, "fabric/src/main/resources/fabric.mod.json", fabric_metadata(spec))
 	write(root, "forge/src/main/resources/META-INF/mods.toml", forge_metadata(spec))
-	return gradle.generate_gradlew(root, nil, "8.10.1")
+	return gradle.generate_gradlew(root, nil, M.versions.gradle)
 end
 
 return M

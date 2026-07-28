@@ -242,6 +242,110 @@ local function test_command_platform_generation()
 	vim.fn.input = original_input
 end
 
+local function test_build_matrix_definition()
+	local matrix = dofile(vim.fs.joinpath(vim.fn.getcwd(), "test", "build_matrix.lua"))
+	assert_equal(matrix.classify_failure("connection timed out", false), "network_failure", "matrix should classify network failures")
+	assert_equal(matrix.classify_failure("Connection refused", false), "network_failure", "matrix should classify refused connections")
+	assert_equal(matrix.classify_failure("Read timed out", false), "network_failure", "matrix should classify read timeouts")
+	assert_equal(matrix.classify_failure("Temporary failure in name resolution", false), "network_failure", "matrix should classify DNS failures")
+	assert_equal(matrix.classify_failure("Could not transfer artifact example:demo:jar:1.0", false), "network_failure", "matrix should classify Maven transfer failures")
+	assert_equal(matrix.classify_failure("Test of distribution url failed", false), "network_failure", "matrix should classify wrapper download failures")
+	assert_equal(matrix.classify_failure("Could not find example:missing:1.0", false), "dependency_resolution_failed", "matrix should classify missing dependencies")
+	assert_equal(matrix.classify_failure("Could not find method example()", false), "build_failed", "matrix should not classify DSL errors as dependency failures")
+	assert_equal(matrix.classify_failure("compiler error", false), "build_failed", "matrix should preserve ordinary build failures")
+	assert_equal(matrix.classify_failure("", true), "timeout", "matrix should classify explicit timeouts")
+	assert_equal(matrix.classify_process({ code = 0, timed_out = true }), "timeout", "matrix should prioritize timeout over exit code")
+	assert_equal(matrix.classify_process({ code = -1, start_failed = true }), "process_start_failed", "matrix should classify process startup failures")
+	assert_equal(matrix.classify_process({ code = 0 }), "passed", "matrix should classify successful processes")
+	assert_equal(matrix.classify_generation_error({ code = "timeout" }), "timeout", "matrix should classify Java probe timeouts")
+	assert_equal(matrix.classify_generation_error({ code = "gradle_wrapper_start_failed" }), "process_start_failed", "matrix should classify wrapper startup failures")
+	assert_equal(matrix.classify_generation_error({ code = "gradle_wrapper_failed", detail = "connection refused" }), "network_failure", "matrix should classify generation-stage network failures")
+	local subset, subset_error = matrix.select_cases("paper-java-gradle,fabric-kotlin-gradle")
+	assert_equal(subset_error, nil, "valid matrix filters should not return an error")
+	assert_equal(#subset, 2, "valid matrix filters should select requested cases")
+	local unknown_cases, unknown_error = matrix.select_cases("does-not-exist")
+	assert_equal(unknown_cases, nil, "unknown matrix filters should be rejected")
+	assert_equal(unknown_error.code, "matrix_cases_unknown", "unknown matrix filters should return a structured error")
+	local empty_cases, empty_error = matrix.select_cases(",,,")
+	assert_equal(empty_cases, nil, "empty matrix filters should be rejected")
+	assert_equal(empty_error.code, "matrix_cases_empty", "empty matrix filters should return a structured error")
+	local whitespace_cases, whitespace_error = matrix.select_cases("   ")
+	assert_equal(whitespace_cases, nil, "whitespace matrix filters should be rejected")
+	assert_equal(whitespace_error.code, "matrix_cases_empty", "whitespace matrix filters should return matrix_cases_empty")
+	local mixed_cases, mixed_error = matrix.select_cases("paper-java-gradle,   ")
+	assert_equal(mixed_error, nil, "trailing whitespace entries should be ignored")
+	assert_equal(#mixed_cases, 1, "mixed whitespace filters should preserve valid cases")
+	local report_valid, report_error = matrix.validate_report_path("/tmp/matrix", "/tmp/matrix/paper-java-gradle/report.json", matrix.cases)
+	assert_equal(report_valid, nil, "reports inside case directories should be rejected")
+	assert_equal(report_error.code, "matrix_report_inside_case", "report collisions should return a structured error")
+	assert_equal(matrix.validate_report_path("/tmp/matrix", "/tmp/matrix-report.json", matrix.cases), true, "reports outside case directories should be accepted")
+	local report_root = vim.fn.tempname()
+	local report_alias = vim.fn.tempname()
+	vim.fn.mkdir(report_root .. "/paper-java-gradle", "p")
+	assert_truthy(vim.uv.fs_symlink(report_root .. "/paper-java-gradle", report_alias) ~= nil, "report alias fixture should be created")
+	local alias_valid, alias_error = matrix.validate_report_path(report_root, report_alias .. "/report.json", matrix.cases)
+	assert_equal(alias_valid, nil, "symlinked reports inside case directories should be rejected")
+	assert_equal(alias_error.code, "matrix_report_inside_case", "symlinked report collisions should remain structured")
+	local nested_valid, nested_error = matrix.validate_report_path(report_root, report_alias .. "/not-created/report.json", matrix.cases)
+	assert_equal(nested_valid, nil, "reports below unresolved symlink suffixes should be rejected")
+	assert_equal(nested_error.code, "matrix_report_inside_case", "unresolved symlink suffixes should remain structured")
+	local report_target = report_root .. "/paper-java-gradle/report-target.json"
+	local report_link = vim.fn.tempname()
+	vim.fn.writefile({ "report" }, report_target)
+	assert_truthy(vim.uv.fs_symlink(report_target, report_link) ~= nil, "report file symlink fixture should be created")
+	local linked_valid, linked_error = matrix.validate_report_path(report_root, report_link, matrix.cases)
+	assert_equal(linked_valid, nil, "report file symlinks should be rejected")
+	assert_equal(linked_error.code, "matrix_report_symlink", "report file symlinks should return a structured error")
+	vim.fn.delete(report_link)
+	local dangling_link = vim.fn.tempname()
+	assert_truthy(vim.uv.fs_symlink(report_root .. "/missing-report.json", dangling_link) ~= nil, "dangling report symlink fixture should be created")
+	local dangling_valid, dangling_error = matrix.validate_report_path(report_root, dangling_link, matrix.cases)
+	assert_equal(dangling_valid, nil, "dangling report symlinks should be rejected")
+	assert_equal(dangling_error.code, "matrix_report_symlink", "dangling report symlinks should return a structured error")
+	vim.fn.delete(dangling_link)
+	local future_root = vim.fn.tempname()
+	local future_alias = vim.fn.tempname()
+	vim.fn.mkdir(future_root, "p")
+	assert_truthy(vim.uv.fs_symlink(future_root .. "/paper-java-gradle", future_alias) ~= nil, "future case alias fixture should be created")
+	local future_valid, future_error = matrix.validate_report_path(future_root, future_alias .. "/reports/result.json", matrix.cases)
+	assert_equal(future_valid, nil, "dangling report ancestors should be rejected")
+	assert_equal(future_error.code, "matrix_path_unresolved_symlink", "dangling report ancestors should remain structured")
+	vim.fn.delete(future_alias)
+	vim.fn.delete(future_root, "rf")
+	vim.fn.delete(report_alias)
+	vim.fn.delete(report_root, "rf")
+	local covered_platforms = {}
+	local covered_languages = {}
+	local covered_builds = {}
+	for _, case in ipairs(matrix.cases) do
+		covered_platforms[case.spec.platform] = true
+		covered_languages[case.spec.language] = true
+		covered_builds[case.spec.build_system] = true
+		assert_truthy(case.toolchain and case.toolchain.jdk, case.name .. " should record its JDK")
+		if case.spec.platform == "architectury" then
+			assert_equal(case.toolchain, require("minecraft-dev.generators.architectury").versions and {
+				jdk = 21,
+				gradle = require("minecraft-dev.generators.architectury").versions.gradle,
+				loom = require("minecraft-dev.generators.architectury").versions.loom,
+			}, "Architectury matrix metadata should derive from generator versions")
+		end
+	end
+	for _, platform_name in ipairs({ "paper", "velocity", "fabric", "forge", "neoforge", "architectury" }) do
+		assert_equal(covered_platforms[platform_name], true, "build matrix should cover " .. platform_name)
+	end
+	assert_equal(covered_languages.java, true, "build matrix should cover Java")
+	assert_equal(covered_languages.kotlin, true, "build matrix should cover Kotlin")
+	assert_equal(covered_builds.gradle, true, "build matrix should cover Gradle")
+	assert_equal(covered_builds.maven, true, "build matrix should cover Maven")
+	local fabric_options_covered = false
+	for _, case in ipairs(matrix.cases) do
+		if case.spec.platform == "fabric" and case.spec.use_mixins and case.spec.generate_datagen then
+			fabric_options_covered = true
+		end
+	end
+	assert_equal(fabric_options_covered, true, "build matrix should cover Fabric Mixin and datagen")
+end
+
 local function generate_project(spec)
 	local operation = project.generate(spec)
 	if operation.status == "pending" then vim.wait(1000, function() return operation.status ~= "pending" end, 10) end
@@ -789,6 +893,10 @@ local function test_forge_family_generation()
 		assert_equal(err, nil, platform .. " generation should not return an error")
 		local build = read_file(directory .. "/build.gradle")
 		assert_truthy(build:find("parchment", 1, true) ~= nil, platform .. " should honor Parchment mappings")
+		assert_truthy(build:find("\\n", 1, true) == nil, platform .. " Gradle script should not contain escaped newlines")
+		if platform == "forge" then
+			assert_truthy(read_file(directory .. "/settings.gradle"):find("repo.spongepowered.org", 1, true) ~= nil, "Forge Mixins should configure the Sponge plugin repository")
+		end
 		assert_equal(vim.fn.filereadable(directory .. "/src/main/resources/examplemod.mixins.json"), 1, platform .. " should generate mixin config")
 		local manifest = platform == "forge" and "mods.toml" or "neoforge.mods.toml"
 		assert_equal(vim.fn.filereadable(directory .. "/src/main/resources/META-INF/" .. manifest), 1, platform .. " manifest should exist")
@@ -1431,6 +1539,7 @@ local function run()
 	test_command_entrypoints()
 	test_wizard_cancellation()
 	test_command_platform_generation()
+	test_build_matrix_definition()
 	test_platform_registry()
 	test_architectury_generation()
 	test_custom_v3_local_template()

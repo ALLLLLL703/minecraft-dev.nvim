@@ -112,3 +112,10 @@ require("minecraft-dev").generate({
 - `:GmcPro` 的补全由平台注册表中的 command capability 派生，只列出位置参数可以完整生成的平台。
 - Forge、NeoForge 和 Architectury 返回 `interactive_only`，通过无参数向导收集完整版本集合。
 - `:GmcPro` 无参数与 `:MinecraftDevNew` 共用同一向导 operation，选择取消和主动取消均返回 `cancelled`。
+
+## 当前实现切片：P0.5 构建矩阵
+
+- 快速 Lua 回归只验证 runner 定义和故障分类；网络构建由 `test/integration_build_matrix.lua` 显式执行。
+- 矩阵固定记录 JDK、Gradle/Maven、Minecraft、Loader/Loom 和语言组合，并复用用户级依赖缓存。
+- 结果写入 JSON，包含 Git 指纹、命令和耗时；timeout、network、dependency、tool、generation 与 build failure 分开报告。
+- 代表性矩阵覆盖 Paper、Velocity、Fabric Java/Kotlin、Forge、NeoForge 和 Architectury，以及 Maven/Gradle、Mixin/datagen。

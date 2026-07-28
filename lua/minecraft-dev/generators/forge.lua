@@ -14,8 +14,7 @@ local function forge_build(spec)
 		and string.format("channel: 'parchment', version: '%s-%s'", spec.parchment_version, spec.minecraft_version)
 		or string.format("channel: 'official', version: '%s'", spec.minecraft_version)
 	local mixin_plugin = spec.use_mixins and "\n    id 'org.spongepowered.mixin' version '0.7-SNAPSHOT'" or ""
-	local mixin_config = spec.use_mixins and string.format([[\n
-mixin {
+	local mixin_config = spec.use_mixins and "\n" .. string.format([[mixin {
     add sourceSets.main, '%s.refmap.json'
     config '%s.mixins.json'
 }
@@ -51,7 +50,7 @@ tasks.named('processResources', ProcessResources).configure {
 end
 
 local function neoforge_build(spec)
-	local parchment = spec.parchment_version and string.format([[\n    parchment {
+	local parchment = spec.parchment_version and "\n" .. string.format([[    parchment {
         minecraftVersion = %s
         mappingsVersion = %s
     }]], quote(spec.minecraft_version), quote(spec.parchment_version)) or ""
@@ -140,7 +139,7 @@ function M.run(_, project_path, _, spec, platform_name)
 	fs.mkdir(metadata)
 	fs.write_file(path.join(source_dir, ctx.main .. ".java"), main_source(spec, platform))
 	fs.write_file(path.join(ctx.path, "build.gradle"), platform == "forge" and forge_build(spec) or neoforge_build(spec))
-	fs.write_file(path.join(ctx.path, "settings.gradle"), "pluginManagement { repositories { gradlePluginPortal(); maven { url = 'https://maven.minecraftforge.net/' }; maven { url = 'https://maven.neoforged.net/releases' } } }\nrootProject.name = " .. quote(ctx.artifactId) .. "\n")
+	fs.write_file(path.join(ctx.path, "settings.gradle"), "pluginManagement { repositories { gradlePluginPortal(); maven { url = 'https://maven.minecraftforge.net/' }; maven { url = 'https://maven.neoforged.net/releases' }; maven { url = 'https://repo.spongepowered.org/repository/maven-public/' } } }\nrootProject.name = " .. quote(ctx.artifactId) .. "\n")
 	fs.write_file(path.join(ctx.path, "gradle.properties"), "org.gradle.jvmargs=-Xmx3G\norg.gradle.daemon=false\n")
 	local manifest = platform == "forge" and "mods.toml" or "neoforge.mods.toml"
 	fs.write_file(path.join(metadata, manifest), mod_manifest(spec, platform))

@@ -82,11 +82,11 @@
 
 现状：真实构建已人工执行，但 `test/test_refactor.lua` 主要断言文件内容，无法在后续变更中阻止 Gradle/Maven 回归。
 
-- [ ] 增加可选的网络集成测试层，不把慢构建塞进快速单元测试。
-- [ ] 缓存 Maven/Gradle 依赖，并记录 JDK、Gradle、平台版本组合。
-- [ ] 至少覆盖 Paper、Velocity、Fabric、Forge、NeoForge、Architectury。
-- [ ] 覆盖 Java/Kotlin、Gradle/Maven、Mixin/datagen 等关键分支。
-- [ ] 将超时、网络失败和依赖坐标失效区分报告。
+- [x] 增加可选的网络集成测试层，不把慢构建塞进快速单元测试。
+- [x] 缓存 Maven/Gradle 依赖，并记录 JDK、Gradle、平台版本组合。
+- [x] 至少覆盖 Paper、Velocity、Fabric、Forge、NeoForge、Architectury。
+- [x] 覆盖 Java/Kotlin、Gradle/Maven、Mixin/datagen 等关键分支。
+- [x] 将超时、网络失败和依赖坐标失效区分报告。
 
 验收：修改生成模板后，可以用一条命令复验所有代表性项目。
 

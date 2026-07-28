@@ -15,5 +15,7 @@
 /archetype/fabric_gradle/.settings
 /test/*
 !/test/test_refactor.lua
+!/test/build_matrix.lua
+!/test/integration_build_matrix.lua
 /archetype/fabric_gradle/build
 /sess.vim

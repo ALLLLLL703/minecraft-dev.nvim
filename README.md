@@ -207,6 +207,24 @@ nvim --headless --clean -u NONE \
   +qa
 ```
 
+Run the optional network-backed build matrix with JDK 21, Gradle, and Maven installed:
+
+```bash
+MINECRAFT_DEV_JAVA_HOME=/path/to/jdk-21 \
+nvim --headless --clean -u NONE \
+  "+set rtp+=." \
+  "+lua dofile('test/integration_build_matrix.lua')"
+```
+
+The matrix covers Paper, Velocity, Fabric Java/Kotlin with Mixin and datagen, Forge, NeoForge, and Architectury. It
+reuses `~/.gradle` and `~/.m2/repository` by default and writes a JSON report to a temporary path. Use
+`MINECRAFT_DEV_MATRIX_CASES=paper-java-gradle,fabric-kotlin-gradle` to select cases,
+`MINECRAFT_DEV_MATRIX_TIMEOUT_MS` to change each build timeout, `MINECRAFT_DEV_MATRIX_REPORT` to choose the report,
+and `MINECRAFT_DEV_MATRIX_KEEP=1` to preserve generated projects. Failures are classified as timeout, network,
+dependency resolution, missing tool, process startup, generation, JDK mismatch, or ordinary build failures.
+Reports also include the Git commit, dirty-worktree state, actual Java/Gradle/Maven versions, pinned per-case toolchains,
+cache paths, commands, durations, and the final status of every case. Unknown or empty case filters are rejected.
+
 ### last
 
 im not good at english so plz forgive me T_T
