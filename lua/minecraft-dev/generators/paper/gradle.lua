@@ -1,6 +1,5 @@
 local context = require("minecraft-dev.context")
 local fs = require("minecraft-dev.util.fs")
-local notify = require("minecraft-dev.util.notify")
 local path_util = require("minecraft-dev.util.path")
 local templates = require("minecraft-dev.generators.paper.templates")
 local version_util = require("minecraft-dev.version")
@@ -15,15 +14,17 @@ local M = {}
 ---@param version string
 function M.generate(project_path, version, language, spec)
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
+	local operation
 	options.with_language(language, function(selected_language)
 		local family = version_util.resolve_family(mc_version)
 
 		if family == "v1_13_plus" then
-			M.generate_higher(project_path, mc_version, selected_language, spec)
+			operation = M.generate_higher(project_path, mc_version, selected_language, spec)
 			return
 		end
-		M.generate_lower(project_path, mc_version, selected_language, spec)
+		operation = M.generate_lower(project_path, mc_version, selected_language, spec)
 	end)
+	return operation
 end
 
 ---@param ctx ProjectContext
@@ -83,9 +84,9 @@ function M.generate_higher(project_path, version, language, spec)
 	)
 
 	write_main(ctx, lang, "v1_13_plus/Main.java", src_dir)
-	gradle_util.generate_gradlew(path)
+	local operation = gradle_util.generate_gradlew(path)
 
-	notify.notify(vim.log.levels.INFO, { "paper", "generated_gradle_high" }, path)
+	return operation
 end
 
 ---@param project_path string
@@ -123,7 +124,7 @@ function M.generate_lower(project_path, version, language, spec)
 
 	write_main(ctx, lang, "1.13-/Main.java", src_dir)
 
-	gradle_util.generate_gradlew(path)
-	notify.notify(vim.log.levels.INFO, { "paper", "generated_gradle_low" }, path)
+	local operation = gradle_util.generate_gradlew(path)
+	return operation
 end
 return M

@@ -99,3 +99,10 @@ require("minecraft-dev").generate({
 - Gradle `group` 使用 `group_id`，项目 `version` 使用 `plugin_version`，依赖版本继续使用 `minecraft_version`。
 - `settings.gradle` 的项目名使用 `artifact_id`，因此默认归档名不会与项目版本串位。
 - 未提供 `plugin_version` 时与插件元数据保持一致，使用 `1.0.0`。
+
+## 当前实现切片：P0.3 生成结果
+
+- `generate()`、`generate_async()` 和 `generate_template()` 返回可取消 operation，最终状态统一为 `generated`、`failed` 或 `cancelled`。
+- 原生项目和官方模板都先写入目标同级 staging；wrapper、网络和 finalizer 全部成功后才迁移到目标目录。
+- 取消只请求终止活动子进程；子进程退出并清理 staging 后才触发一次最终回调。
+- 网络回退作为成功结果的 `warnings` 返回，不再同时表达“成功”和“错误”。

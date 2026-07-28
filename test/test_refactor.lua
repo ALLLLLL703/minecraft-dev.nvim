@@ -41,6 +41,22 @@ local function read_file(path)
 	return table.concat(vim.fn.readfile(path), "\n")
 end
 
+local function generate_project(spec)
+	local operation = project.generate(spec)
+	if operation.status == "pending" then vim.wait(1000, function() return operation.status ~= "pending" end, 10) end
+	assert_truthy(operation.status ~= "pending", "project generation should complete")
+	if operation.status == "generated" then return true, nil end
+	return nil, operation.result and operation.result.error
+end
+
+local function generate_template(options)
+	local operation = custom_templates.generate(options)
+	if operation.status == "pending" then vim.wait(10000, function() return operation.status ~= "pending" end, 20) end
+	assert_truthy(operation.status ~= "pending", "template generation should complete")
+	if operation.status == "generated" then return operation.result, nil end
+	return nil, operation.result and operation.result.error
+end
+
 local function test_platform_registry()
 	assert_equal(
 		platforms.names(),
@@ -59,10 +75,10 @@ local function test_architectury_generation()
 	local gradle = require("minecraft-dev.util.gradle")
 	local original_generate_gradlew = gradle.generate_gradlew
 	local wrapper_version
-	gradle.generate_gradlew = function(_, _, version) wrapper_version = version end
+	gradle.generate_gradlew = function(_, _, version) wrapper_version = version return true end
 	local directory = vim.fn.tempname()
 	vim.fn.mkdir(directory, "p")
-	local ok, err = project.generate({
+	local ok, err = generate_project({
 		platform = "architectury",
 		build_system = "gradle",
 		minecraft_version = "1.20.1",
@@ -128,7 +144,7 @@ final class Disabled {}
 		},
 	}))
 
-	local result, err = custom_templates.generate({
+	local result, err = generate_template({
 		provider = "local",
 		source = template_root,
 		directory = destination,
@@ -193,23 +209,12 @@ local function test_custom_archive_provider()
 		files = { { template = "hello.ft", destination = "hello.txt" } },
 	}))
 	assert_equal(vim.system({ "zip", "-qr", archive, "." }, { cwd = template_root }):wait().code, 0, "archive fixture should be created")
-	local completed = false
-	local result
-	local generation_error
-	local handle, start_error = custom_templates.generate({
+	local result, generation_error = generate_template({
 		provider = "archive",
 		source = archive,
 		directory = destination,
 		properties = { NAME = "archive" },
-		callback = function(value, err)
-			result = value
-			generation_error = err
-			completed = true
-		end,
 	})
-	assert_truthy(handle ~= nil, "archive provider should return an async handle")
-	assert_equal(start_error, nil, "archive provider should start without an error")
-	assert_truthy(vim.wait(5000, function() return completed end, 20), "archive provider should complete asynchronously")
 	assert_truthy(result ~= nil, "archive provider should generate files")
 	assert_equal(generation_error, nil, "archive provider should not return an error")
 	assert_equal(read_file(destination .. "/hello.txt"), "hello archive", "archive template should render")
@@ -235,21 +240,12 @@ local function test_custom_remote_provider()
 	assert_equal(vim.system({ "git", "add", "." }, { cwd = repository }):wait().code, 0, "remote fixture should stage")
 	assert_equal(vim.system({ "git", "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-qm", "fixture" }, { cwd = repository }):wait().code, 0, "remote fixture should commit")
 	local source = "file://" .. repository
-	local completed = false
-	local result
-	local generation_error
-	local handle, start_error = custom_templates.generate({
+	local result, generation_error = generate_template({
 		provider = "remote",
 		source = source,
 		directory = destination,
 		properties = { NAME = "provider" },
-		callback = function(value, err)
-			result, generation_error, completed = value, err, true
-		end,
 	})
-	assert_truthy(handle ~= nil, "remote provider should return an async handle")
-	assert_equal(start_error, nil, "remote provider should start without an error")
-	assert_truthy(vim.wait(5000, function() return completed end, 20), "remote provider should complete asynchronously")
 	assert_truthy(result ~= nil, "remote provider should generate files")
 	assert_equal(generation_error, nil, "remote provider should not return an error")
 	assert_equal(read_file(destination .. "/remote.txt"), "remote provider", "remote template should render")
@@ -284,7 +280,7 @@ local function test_custom_property_derivations()
 		},
 		files = { { template = "main.ft", destination = "main.txt" } },
 	}))
-	local result, err = custom_templates.generate({
+	local result, err = generate_template({
 		provider = "local",
 		source = template_root,
 		directory = destination,
@@ -306,16 +302,24 @@ local function test_custom_run_config_finalizers()
 	vim.fn.mkdir(template_root, "p")
 	vim.fn.mkdir(destination, "p")
 	local template_fs = require("minecraft-dev.util.fs")
+	local imported_root
+	local import_group = vim.api.nvim_create_augroup("MinecraftDevTestImport", { clear = true })
+	vim.api.nvim_create_autocmd("User", {
+		group = import_group,
+		pattern = "MinecraftDevProjectGenerated",
+		callback = function(args) imported_root = args.data.root end,
+	})
 	template_fs.write_file(template_root .. "/empty.ft", "project\n")
 	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
 		version = 3,
 		files = { { template = "empty.ft", destination = "README.txt" } },
 		finalizers = {
+			{ type = "import_gradle_project" },
 			{ type = "add_gradle_run", name = "Build", tasks = { "build" } },
 			{ type = "add_maven_run", name = "Package", goals = { "package" } },
 		},
 	}))
-	local result, err = custom_templates.generate({ provider = "local", source = template_root, directory = destination })
+	local result, err = generate_template({ provider = "local", source = template_root, directory = destination })
 	assert_truthy(result ~= nil, "run config finalizers should complete")
 	assert_equal(err, nil, "run config finalizers should not return an error")
 	local runs = vim.json.decode(read_file(destination .. "/.nvim/minecraft-dev-runs.json"))
@@ -323,6 +327,170 @@ local function test_custom_run_config_finalizers()
 	assert_equal(runs[1].args, { "build" }, "Gradle run finalizer should persist tasks")
 	assert_equal(runs[2].type, "maven", "Maven run finalizer should persist its type")
 	assert_equal(runs[2].args, { "package" }, "Maven run finalizer should persist goals")
+	assert_equal(imported_root, destination, "import finalizers should receive the committed destination")
+	vim.api.nvim_del_augroup_by_id(import_group)
+	vim.fn.delete(template_root, "rf")
+	vim.fn.delete(destination, "rf")
+end
+
+local function test_custom_finalizer_failure_cleanup()
+	if vim.fn.executable("git") ~= 1 then return end
+	local template_root = vim.fn.tempname()
+	local destination = vim.fn.tempname()
+	vim.fn.mkdir(template_root, "p")
+	vim.fn.mkdir(destination, "p")
+	local template_fs = require("minecraft-dev.util.fs")
+	template_fs.write_file(template_root .. "/README.ft", "staged\n")
+	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		files = { { template = "README.ft", destination = "README.txt" } },
+		finalizers = { { type = "git_add_all" } },
+	}))
+	local callback_count = 0
+	local operation = custom_templates.generate({
+		provider = "local",
+		source = template_root,
+		directory = destination,
+		callback = function(result)
+			callback_count = callback_count + 1
+			assert_equal(result.status, "failed", "custom callback should receive finalizer failure")
+		end,
+	})
+	assert_equal(operation.status, "pending", "external finalizers should keep generation pending")
+	vim.wait(5000, function() return operation.status ~= "pending" end, 20)
+	assert_equal(operation.status, "failed", "failed finalizers should fail template generation")
+	assert_equal(operation.result.error.code, "finalizer_failed", "finalizer errors should remain structured")
+	assert_equal(vim.fn.filereadable(destination .. "/README.txt"), 0, "failed finalizers should not pollute the destination")
+	vim.wait(1000, function() return callback_count == 1 end, 10)
+	assert_equal(callback_count, 1, "custom generation callback should run exactly once")
+	local git_destination = vim.fn.tempname()
+	vim.fn.mkdir(git_destination, "p")
+	local generated, generation_error = generate_template({
+		provider = "local",
+		source = template_root,
+		directory = git_destination,
+		use_git = true,
+	})
+	assert_truthy(generated ~= nil, "USE_GIT should initialize staging before git finalizers")
+	assert_equal(generation_error, nil, "initialized Git finalizers should complete")
+	assert_equal(vim.fn.isdirectory(git_destination .. "/.git"), 1, "Git initialization should be committed with the project")
+	vim.fn.delete(template_root, "rf")
+	vim.fn.delete(destination, "rf")
+	vim.fn.delete(git_destination, "rf")
+end
+
+local function test_custom_finalizer_cancellation()
+	local template_root = vim.fn.tempname()
+	local destination = vim.fn.tempname()
+	vim.fn.mkdir(template_root, "p")
+	vim.fn.mkdir(destination, "p")
+	local template_fs = require("minecraft-dev.util.fs")
+	template_fs.write_file(template_root .. "/README.ft", "staged\n")
+	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		files = { { template = "README.ft", destination = "README.txt" } },
+		finalizers = { { type = "run_gradle_tasks", tasks = { "build" } } },
+	}))
+	local original_system = vim.system
+	local process_callback
+	local killed = false
+	vim.system = function(_, _, callback)
+		process_callback = callback
+		return { kill = function() killed = true end }
+	end
+	local callback_count = 0
+	local operation = custom_templates.generate({
+		provider = "local",
+		source = template_root,
+		directory = destination,
+		callback = function(result)
+			callback_count = callback_count + 1
+			assert_equal(result.status, "cancelled", "custom callback should receive cancellation")
+		end,
+	})
+	vim.system = original_system
+	operation.cancel()
+	assert_equal(operation.status, "pending", "custom cancellation should wait for the finalizer process")
+	assert_equal(killed, true, "custom cancellation should terminate the finalizer process")
+	process_callback({ code = 143, stderr = "cancelled" })
+	vim.wait(1000, function() return operation.status == "cancelled" end, 10)
+	assert_equal(operation.status, "cancelled", "custom cancellation should finish after process exit")
+	assert_equal(vim.fn.filereadable(destination .. "/README.txt"), 0, "cancelled finalizers should not pollute the destination")
+	vim.wait(1000, function() return callback_count == 1 end, 10)
+	assert_equal(callback_count, 1, "cancelled custom generation should callback exactly once")
+	local replacement_callback
+	vim.system = function(_, _, callback)
+		replacement_callback = callback
+		return { kill = function() end }
+	end
+	local replaced_operation = custom_templates.generate({ provider = "local", source = template_root, directory = destination })
+	vim.system = original_system
+	local replacement_target = vim.fn.tempname()
+	vim.fn.mkdir(replacement_target, "p")
+	vim.fn.delete(destination, "d")
+	assert_truthy(vim.uv.fs_symlink(replacement_target, destination) ~= nil, "custom runtime symlink replacement should be created")
+	replacement_callback({ code = 0, stderr = "" })
+	vim.wait(1000, function() return replaced_operation.status ~= "pending" end, 10)
+	assert_equal(replaced_operation.status, "failed", "custom runtime symlink replacement should fail commit")
+	assert_equal(replaced_operation.result.error.code, "destination_changed", "custom runtime symlink replacement should remain structured")
+	vim.fn.delete(destination)
+	vim.fn.mkdir(destination, "p")
+	vim.fn.delete(replacement_target, "rf")
+	local invalid_destination = custom_templates.generate({
+		provider = "local",
+		source = template_root,
+		directory = "/proc/minecraft-dev-test/project",
+	})
+	assert_equal(invalid_destination.status, "failed", "uncreatable destinations should return a failed operation")
+	assert_equal(invalid_destination.result.error.code, "destination_prepare_failed", "destination preparation failures should remain structured")
+	if vim.fn.executable("unzip") == 1 then
+		local missing_archive = custom_templates.generate({ provider = "archive", directory = vim.fn.tempname() })
+		assert_equal(missing_archive.status, "failed", "missing archive sources should fail immediately")
+		assert_equal(missing_archive.result.error.code, "source_missing", "missing archive sources should return source_missing")
+	end
+	local symlink_target = vim.fn.tempname()
+	local symlink_destination = vim.fn.tempname()
+	vim.fn.mkdir(symlink_target, "p")
+	assert_truthy(vim.uv.fs_symlink(symlink_target, symlink_destination) ~= nil, "custom symlink fixture should be created")
+	local symlink_result = custom_templates.generate({ provider = "local", source = template_root, directory = symlink_destination })
+	assert_equal(symlink_result.status, "failed", "custom symlink destinations should be rejected")
+	assert_equal(symlink_result.result.error.code, "destination_symlink", "custom symlink rejection should remain structured")
+	vim.fn.delete(symlink_destination)
+	vim.fn.delete(symlink_target, "rf")
+
+	if vim.fn.executable("git") == 1 then
+		local remote_source = "file:///minecraft-dev-cancel-" .. tostring(vim.uv.hrtime())
+		local remote_destination = vim.fn.tempname()
+		vim.fn.mkdir(remote_destination, "p")
+		local remote_process_callback
+		local remote_killed = false
+		vim.system = function(_, _, callback)
+			remote_process_callback = callback
+			return { kill = function() remote_killed = true end }
+		end
+		local remote_callback_count = 0
+		local remote_operation = custom_templates.generate({
+			provider = "remote",
+			source = remote_source,
+			directory = remote_destination,
+			callback = function(result)
+				remote_callback_count = remote_callback_count + 1
+				assert_equal(result.status, "cancelled", "remote callback should receive cancellation")
+			end,
+		})
+		vim.system = original_system
+		remote_operation.cancel()
+		assert_equal(remote_operation.status, "pending", "remote cancellation should wait for Git exit")
+		assert_equal(remote_killed, true, "remote cancellation should terminate Git")
+		remote_process_callback({ code = 143, stderr = "cancelled" })
+		vim.wait(1000, function() return remote_operation.status == "cancelled" and remote_callback_count == 1 end, 10)
+		assert_equal(remote_operation.status, "cancelled", "remote generation should settle after Git exits")
+		local cache_root = vim.fs.joinpath(vim.fn.stdpath("cache"), "minecraft-dev", "templates", vim.fn.sha256(remote_source))
+		for name in vim.fs.dir(vim.fs.dirname(cache_root)) do
+			assert_truthy(not vim.startswith(name, vim.fs.basename(cache_root) .. ".clone-"), "cancelled clone should remove its temporary cache")
+		end
+		vim.fn.delete(remote_destination, "rf")
+	end
 	vim.fn.delete(template_root, "rf")
 	vim.fn.delete(destination, "rf")
 end
@@ -366,16 +534,41 @@ local function test_fabric_online_version_parser()
 	local scalar_cache = fabric_version_data.read(invalid_cache_version)
 	assert_equal(scalar_cache.kotlin_loader, config.default_config.defaults.fabric.version_data.kotlin_loader, "scalar Fabric cache data should be ignored")
 	vim.fn.delete(invalid_cache_path)
+
+	local pending_requests = {}
+	local version_callback_count = 0
+	local resolve_operation = fabric_version_data.resolve("1.21.1", function() version_callback_count = version_callback_count + 1 end, function(_, _, callback)
+		local request = { callback = callback, killed = false }
+		function request.kill() request.killed = true end
+		table.insert(pending_requests, request)
+		return request
+	end)
+	resolve_operation.cancel()
+	assert_equal(resolve_operation.status, "pending", "version cancellation should wait for curl processes to exit")
+	for _, request in ipairs(pending_requests) do
+		assert_equal(request.killed, true, "version cancellation should terminate every curl process")
+		request.callback({ code = 143, stderr = "cancelled" })
+	end
+	vim.wait(1000, function() return resolve_operation.status == "cancelled" end, 10)
+	assert_equal(resolve_operation.status, "cancelled", "version cancellation should finish after every curl exits")
+	assert_equal(version_callback_count, 0, "cancelled version resolution should not continue generation")
+	local spawn_failure_count = 0
+	local failed_spawn = fabric_version_data.resolve("1.21.1", function(_, err)
+		spawn_failure_count = spawn_failure_count + 1
+		assert_equal(err.code, "version_fetch_failed", "curl startup failures should use the fallback error contract")
+	end, function() error("cannot start curl") end)
+	assert_equal(failed_spawn.status, "generated", "curl startup failures should settle after fallback data is returned")
+	assert_equal(spawn_failure_count, 1, "curl startup failures should callback exactly once")
 end
 
 local function test_forge_family_generation()
 	local gradle = require("minecraft-dev.util.gradle")
 	local original_generate_gradlew = gradle.generate_gradlew
-	gradle.generate_gradlew = function() end
+	gradle.generate_gradlew = function() return true end
 	for _, platform in ipairs({ "forge", "neoforge" }) do
 		local directory = vim.fn.tempname()
 		vim.fn.mkdir(directory, "p")
-		local ok, err = project.generate({
+		local ok, err = generate_project({
 			platform = platform,
 			build_system = "gradle",
 			minecraft_version = "1.21.1",
@@ -413,7 +606,7 @@ local function test_additional_plugin_platforms()
 	for platform, expectation in pairs(expectations) do
 		local directory = vim.fn.tempname()
 		vim.fn.mkdir(directory, "p")
-		local ok, err = project.generate({
+		local ok, err = generate_project({
 			platform = platform,
 			build_system = "maven",
 			minecraft_version = platform == "velocity" and "3.5.0-SNAPSHOT" or "1.21",
@@ -464,13 +657,16 @@ local function test_gradle_wrapper_generation_isolated_from_project()
 	assert_truthy(vim.wait(1000, function()
 		return vim.fn.filereadable(directory .. "/gradle/wrapper/gradle-wrapper.properties") == 1
 	end, 10), "wrapper files should be copied into the target project")
+	local start_failed = gradle.generate_gradlew(directory, function() error("cannot start Gradle") end)
+	assert_equal(start_failed.status, "failed", "Gradle startup errors should return a failed operation")
+	assert_equal(start_failed.result.error.code, "gradle_wrapper_start_failed", "Gradle startup errors should remain structured")
 	vim.fn.delete(directory, "rf")
 end
 
 local function test_spigot_maven_generation()
 	local directory = vim.fn.tempname()
 	vim.fn.mkdir(directory, "p")
-	local ok, err = project.generate({
+	local ok, err = generate_project({
 		platform = "spigot",
 		build_system = "maven",
 		minecraft_version = "1.21.8",
@@ -511,7 +707,7 @@ end
 local function test_paper_manifest_generation()
 	local directory = vim.fn.tempname()
 	vim.fn.mkdir(directory, "p")
-	local ok, err = project.generate({
+	local ok, err = generate_project({
 		platform = "paper",
 		build_system = "maven",
 		minecraft_version = "1.21.8",
@@ -571,6 +767,169 @@ local function test_project_validation()
 	assert_equal(unsupported_err.code, "unsupported_build", "unsupported build should return a structured error")
 end
 
+local function test_project_generation_results()
+	local function spec(directory)
+		return {
+			platform = "paper",
+			build_system = "gradle",
+			minecraft_version = "1.21.8",
+			directory = directory,
+			group_id = "com.example",
+			artifact_id = "result-test",
+			package_name = "com.example.result",
+			main_class = "ResultTest",
+			language = "java",
+		}
+	end
+
+	local original_generate_gradlew = gradle.generate_gradlew
+	gradle.generate_gradlew = function()
+		local result = { status = "failed", error = { code = "gradle_wrapper_failed" } }
+		return { status = "failed", result = result, on_complete = function(callback) callback(result) end }
+	end
+	local failed_directory = vim.fn.tempname()
+	vim.fn.mkdir(failed_directory, "p")
+	local callback_count = 0
+	local failed = project.generate(spec(failed_directory), function(result)
+		callback_count = callback_count + 1
+		assert_equal(result.status, "failed", "public callback should receive the final failure")
+	end)
+	assert_equal(failed.status, "failed", "wrapper failure should fail project generation")
+	assert_equal(failed.result.error.code, "gradle_wrapper_failed", "wrapper failure should preserve its error code")
+	assert_equal(vim.fn.filereadable(failed_directory .. "/build.gradle.kts"), 0, "failed generation should not pollute the destination")
+	vim.wait(1000, function() return callback_count == 1 end, 10)
+	assert_equal(callback_count, 1, "public callback should run exactly once")
+
+	local child = { status = "pending", callbacks = {} }
+	function child.on_complete(callback) table.insert(child.callbacks, callback) end
+	function child.cancel() child.cancelled = true end
+	gradle.generate_gradlew = function() return child end
+	local cancelled_directory = vim.fn.tempname()
+	vim.fn.mkdir(cancelled_directory, "p")
+	local cancelled = project.generate(spec(cancelled_directory))
+	assert_equal(cancelled.status, "pending", "incomplete wrapper generation should remain pending")
+	cancelled.cancel()
+	assert_equal(cancelled.status, "pending", "cancel should wait for the child process to exit")
+	assert_equal(child.cancelled, true, "project cancellation should cancel the active child operation")
+	for _, completion_callback in ipairs(child.callbacks) do completion_callback({ status = "cancelled" }) end
+	assert_equal(cancelled.status, "cancelled", "child exit should complete cancellation")
+	assert_equal(vim.fn.filereadable(cancelled_directory .. "/build.gradle.kts"), 0, "cancelled generation should not pollute the destination")
+
+	local changed_child = { status = "pending", callbacks = {} }
+	function changed_child.on_complete(callback) table.insert(changed_child.callbacks, callback) end
+	function changed_child.cancel() end
+	gradle.generate_gradlew = function() return changed_child end
+	local changed_directory = vim.fn.tempname()
+	vim.fn.mkdir(changed_directory, "p")
+	local changed = project.generate(spec(changed_directory))
+	local competing = project.generate(spec(changed_directory))
+	assert_equal(competing.status, "failed", "concurrent generation should fail while the destination lock is held")
+	assert_equal(competing.result.error.code, "generation_in_progress", "concurrent generation should return a lock error")
+	vim.fn.writefile({ "keep" }, changed_directory .. "/concurrent.txt")
+	for _, completion_callback in ipairs(changed_child.callbacks) do completion_callback({ status = "generated" }) end
+	assert_equal(changed.status, "failed", "destination changes during generation should fail commit")
+	assert_equal(changed.result.error.code, "destination_changed", "destination changes should return a structured error")
+	assert_equal(read_file(changed_directory .. "/concurrent.txt"), "keep", "destination changes should never be overwritten")
+	local replacement_child = { callbacks = {} }
+	function replacement_child.on_complete(completion_callback) table.insert(replacement_child.callbacks, completion_callback) end
+	function replacement_child.cancel() end
+	gradle.generate_gradlew = function() return replacement_child end
+	local replaced_directory = vim.fn.tempname()
+	local replacement_target = vim.fn.tempname()
+	vim.fn.mkdir(replaced_directory, "p")
+	vim.fn.mkdir(replacement_target, "p")
+	local replaced = project.generate(spec(replaced_directory))
+	vim.fn.delete(replaced_directory, "d")
+	assert_truthy(vim.uv.fs_symlink(replacement_target, replaced_directory) ~= nil, "runtime symlink replacement should be created")
+	for _, completion_callback in ipairs(replacement_child.callbacks) do completion_callback({ status = "generated" }) end
+	assert_equal(replaced.status, "failed", "runtime symlink replacement should fail commit")
+	assert_equal(replaced.result.error.code, "destination_changed", "runtime symlink replacement should remain structured")
+	assert_equal(vim.uv.fs_lstat(replaced_directory).type, "link", "runtime symlink replacement should be preserved")
+
+	local occupied_directory = vim.fn.tempname()
+	vim.fn.mkdir(occupied_directory, "p")
+	vim.fn.writefile({ "keep" }, occupied_directory .. "/existing.txt")
+	local occupied = project.generate(spec(occupied_directory))
+	assert_equal(occupied.status, "failed", "non-empty destinations should be rejected")
+	assert_equal(occupied.result.error.code, "destination_not_empty", "occupied destinations should return a structured error")
+	assert_equal(read_file(occupied_directory .. "/existing.txt"), "keep", "destination rejection should preserve existing files")
+
+	local unsupported_spec = spec(vim.fn.tempname())
+	unsupported_spec.platform = "fabric"
+	unsupported_spec.minecraft_version = "1.12.2"
+	local unsupported = project.generate(unsupported_spec)
+	assert_equal(unsupported.status, "failed", "unsupported Fabric versions should fail generation")
+	assert_equal(unsupported.result.error.code, "unsupported_version", "unsupported Fabric versions should return a structured error")
+
+	local real_destination = vim.fn.tempname()
+	local linked_destination = vim.fn.tempname()
+	vim.fn.mkdir(real_destination, "p")
+	assert_truthy(vim.uv.fs_symlink(real_destination, linked_destination) ~= nil, "symlink fixture should be created")
+	local linked = project.generate(spec(linked_destination))
+	assert_equal(linked.status, "failed", "symlink destinations should be rejected")
+	assert_equal(linked.result.error.code, "destination_symlink", "symlink destinations should return a structured error")
+	assert_equal(vim.uv.fs_lstat(linked_destination).type, "link", "destination rejection should preserve the symlink")
+	local alias_child = { callbacks = {} }
+	function alias_child.on_complete(completion_callback) table.insert(alias_child.callbacks, completion_callback) end
+	function alias_child.cancel() alias_child.cancelled = true end
+	gradle.generate_gradlew = function() return alias_child end
+	local real_parent = vim.fn.tempname()
+	local alias_parent = vim.fn.tempname()
+	vim.fn.mkdir(real_parent, "p")
+	assert_truthy(vim.uv.fs_symlink(real_parent, alias_parent) ~= nil, "parent alias fixture should be created")
+	local aliased = project.generate(spec(alias_parent .. "/project"))
+	local canonical = project.generate(spec(real_parent .. "/project"))
+	assert_equal(canonical.status, "failed", "parent aliases should share one destination lock")
+	assert_equal(canonical.result.error.code, "generation_in_progress", "alias lock conflicts should remain structured")
+	aliased.cancel()
+	for _, completion_callback in ipairs(alias_child.callbacks) do completion_callback({ status = "cancelled" }) end
+	assert_equal(aliased.status, "cancelled", "aliased generation should cancel cleanly")
+
+	local original_resolve = fabric_version_data.resolve
+	local fetch_child = { callbacks = {} }
+	function fetch_child.on_complete(completion_callback) table.insert(fetch_child.callbacks, completion_callback) end
+	function fetch_child.cancel() fetch_child.cancelled = true end
+	fabric_version_data.resolve = function() return fetch_child end
+	local fabric_directory = vim.fn.tempname()
+	vim.fn.mkdir(fabric_directory, "p")
+	local fabric_spec = spec(fabric_directory)
+	fabric_spec.platform = "fabric"
+	fabric_spec.minecraft_version = "1.21.1"
+	local fabric_callback_count = 0
+	local fabric_cancelled = project.generate(fabric_spec, function(result)
+		fabric_callback_count = fabric_callback_count + 1
+		assert_equal(result.status, "cancelled", "Fabric callback should receive cancellation")
+	end)
+	fabric_cancelled.cancel()
+	assert_equal(fabric_cancelled.status, "pending", "Fabric cancellation should wait for network processes")
+	assert_equal(fetch_child.cancelled, true, "Fabric cancellation should cancel version resolution")
+	for _, completion_callback in ipairs(fetch_child.callbacks) do completion_callback({ status = "cancelled" }) end
+	vim.wait(1000, function() return fabric_cancelled.status == "cancelled" and fabric_callback_count == 1 end, 10)
+	assert_equal(fabric_cancelled.status, "cancelled", "Fabric cancellation should settle after network exit")
+	assert_equal(vim.uv.fs_lstat(fabric_directory .. ".minecraft-dev.lock"), nil, "Fabric cancellation should release its destination lock")
+	fabric_version_data.resolve = original_resolve
+	local stale_lock_path = vim.fn.tempname() .. ".lock"
+	vim.fn.mkdir(stale_lock_path, "p")
+	vim.fn.writefile({ "99999999" }, stale_lock_path .. "/pid")
+	local recovered_lock, stale_lock_error = require("minecraft-dev.util.lock").acquire(stale_lock_path)
+	assert_equal(recovered_lock, nil, "stale generation locks should require explicit cleanup")
+	assert_equal(stale_lock_error.code, "stale_generation_lock", "stale locks should return an actionable structured error")
+	vim.fn.delete(stale_lock_path, "rf")
+
+	gradle.generate_gradlew = original_generate_gradlew
+	vim.fn.delete(failed_directory, "rf")
+	vim.fn.delete(cancelled_directory, "rf")
+	vim.fn.delete(changed_directory, "rf")
+	vim.fn.delete(replaced_directory)
+	vim.fn.delete(replacement_target, "rf")
+	vim.fn.delete(occupied_directory, "rf")
+	vim.fn.delete(linked_destination)
+	vim.fn.delete(real_destination, "rf")
+	vim.fn.delete(alias_parent)
+	vim.fn.delete(real_parent, "rf")
+	vim.fn.delete(fabric_directory, "rf")
+end
+
 local function test_noninteractive_paper_generation()
 	local directory = vim.fn.tempname()
 	vim.fn.mkdir(directory, "p")
@@ -579,7 +938,7 @@ local function test_noninteractive_paper_generation()
 		error("non-interactive generation must not request input")
 	end
 
-	local ok, err = project.generate({
+	local ok, err = generate_project({
 		platform = "paper",
 		build_system = "maven",
 		minecraft_version = "1.21.8",
@@ -617,9 +976,9 @@ local function test_noninteractive_fabric_generation()
 	vim.fn.input = function()
 		error("non-interactive generation must not request input")
 	end
-	gradle.generate_gradlew = function() end
+	gradle.generate_gradlew = function() return true end
 
-	local ok, err = project.generate({
+	local ok, err = generate_project({
 		platform = "fabric",
 		build_system = "gradle",
 		minecraft_version = "1.21.11",
@@ -633,6 +992,11 @@ local function test_noninteractive_fabric_generation()
 		generate_datagen = true,
 		use_mixins = true,
 		loom_version = "1.16-SNAPSHOT",
+		fabric_version_data = {
+			loader = "0.18.4",
+			fabric_api = "0.141.3+1.21.11",
+			yarn = nil,
+		},
 	})
 	vim.fn.input = original_input
 	gradle.generate_gradlew = original_generate_gradlew
@@ -664,7 +1028,7 @@ local function test_noninteractive_fabric_kotlin_generation()
 	local gradle = require("minecraft-dev.util.gradle")
 	local original_generate_gradlew = gradle.generate_gradlew
 	local original_input = vim.fn.input
-	gradle.generate_gradlew = function() end
+	gradle.generate_gradlew = function() return true end
 	vim.fn.input = function() error("non-interactive Fabric Kotlin generation must not request input") end
 
 	local generation_spec = {
@@ -688,12 +1052,12 @@ local function test_noninteractive_fabric_kotlin_generation()
 			gradle_version = "8.12.1",
 		},
 	}
-	local invalid, invalid_err = project.generate(vim.tbl_deep_extend("force", {}, generation_spec, {
+	local invalid, invalid_err = generate_project(vim.tbl_deep_extend("force", {}, generation_spec, {
 		fabric_version_data = { kotlin_loader = "garbage+1.13.13+kotlin.2.4.10" },
 	}))
 	assert_equal(invalid, nil, "invalid Fabric Language Kotlin versions should be rejected")
 	assert_equal(invalid_err.code, "invalid_version", "invalid Fabric Language Kotlin versions should return a structured error")
-	local ok, err = project.generate(generation_spec)
+	local ok, err = generate_project(generation_spec)
 
 	assert_equal(ok, true, "public API should generate a Fabric Kotlin project")
 	assert_equal(err, nil, "successful Fabric Kotlin generation should not return an error")
@@ -715,7 +1079,7 @@ local function test_noninteractive_fabric_kotlin_generation()
 	vim.fn.mkdir(client_directory, "p")
 	generation_spec.directory = client_directory
 	generation_spec.side = "client"
-	local client_ok, client_err = project.generate(generation_spec)
+	local client_ok, client_err = generate_project(generation_spec)
 	assert_equal(client_ok, true, "client-only Fabric Kotlin generation should succeed")
 	assert_equal(client_err, nil, "client-only Fabric Kotlin generation should not return an error")
 	assert_equal(vim.fn.filereadable(client_directory .. "/src/client/kotlin/com/example/example/mixin/ExampleModMixin.kt"), 1, "client-only mixins should use the client source set")
@@ -786,7 +1150,7 @@ end
 
 local function test_paper_gradle_project_version()
 	local original_generate_gradlew = gradle.generate_gradlew
-	gradle.generate_gradlew = function() end
+	gradle.generate_gradlew = function() return true end
 	local cases = {
 		{ minecraft_version = "1.12.2", language = "java", build_file = "build.gradle" },
 		{ minecraft_version = "1.12.2", language = "kotlin", build_file = "build.gradle" },
@@ -796,7 +1160,7 @@ local function test_paper_gradle_project_version()
 	for _, case in ipairs(cases) do
 		local directory = vim.fn.tempname()
 		vim.fn.mkdir(directory, "p")
-		local ok, err = project.generate({
+		local ok, err = generate_project({
 			platform = "paper",
 			build_system = "gradle",
 			minecraft_version = case.minecraft_version,
@@ -820,7 +1184,7 @@ local function test_paper_gradle_project_version()
 
 	local default_directory = vim.fn.tempname()
 	vim.fn.mkdir(default_directory, "p")
-	project.generate({
+	generate_project({
 		platform = "paper",
 		build_system = "gradle",
 		minecraft_version = "1.21.8",
@@ -872,6 +1236,8 @@ local function run()
 	test_custom_remote_provider()
 	test_custom_property_derivations()
 	test_custom_run_config_finalizers()
+	test_custom_finalizer_failure_cleanup()
+	test_custom_finalizer_cancellation()
 	test_fabric_online_version_parser()
 	test_forge_family_generation()
 	test_additional_plugin_platforms()
@@ -879,6 +1245,7 @@ local function run()
 	test_spigot_maven_generation()
 	test_paper_manifest_generation()
 	test_project_validation()
+	test_project_generation_results()
 	test_noninteractive_paper_generation()
 	test_noninteractive_fabric_generation()
 	test_noninteractive_fabric_kotlin_generation()

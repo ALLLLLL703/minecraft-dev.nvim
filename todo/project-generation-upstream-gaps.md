@@ -60,11 +60,11 @@
 
 现状：`project.generate()` 调用生成器后无条件返回 `true`；Gradle wrapper、网络和部分生成错误发生在返回之后。Fabric 在线刷新还可能同时回传生成成功与 fetch error。
 
-- [ ] 定义统一结果：`generated`、`failed`、`cancelled`。
-- [ ] 所有生成器返回结构化错误，不以通知代替 API 结果。
-- [ ] `generate_async()` 覆盖所有平台，不只为 Fabric 特判。
-- [ ] wrapper、Git、网络、finalizer 完成后才报告最终成功。
-- [ ] 失败时清理 staging 目录，不留下半成品。
+- [x] 定义统一结果：`generated`、`failed`、`cancelled`。
+- [x] 所有生成器返回结构化错误，不以通知代替 API 结果。
+- [x] `generate_async()` 覆盖所有平台，不只为 Fabric 特判。
+- [x] wrapper、Git、网络、finalizer 完成后才报告最终成功。
+- [x] 失败时清理 staging 目录，不留下半成品。
 
 验收：调用者能可靠判断项目是否完整生成，失败项目不会污染目标目录。
 

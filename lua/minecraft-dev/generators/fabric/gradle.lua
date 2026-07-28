@@ -21,18 +21,16 @@ function M.generate(project_path, version, spec)
 	local function generate(generator_options)
 		if version_util.resolve_family(mc_version) == "v1_13_plus" then
 			if generator_options.language == "java" then
-				M.generate_higher_java(project_path, mc_version, generator_options, spec)
-				return
+				return M.generate_higher_java(project_path, mc_version, generator_options, spec)
 			elseif generator_options.language == "kotlin" then
-				M.generate_higher_kotlin(project_path, mc_version, generator_options, spec)
-				return
+				return M.generate_higher_kotlin(project_path, mc_version, generator_options, spec)
 			end
 		end
 		notify.notify(vim.log.levels.ERROR, { "fabric", "lower_version_unsupported" })
 	end
 
 	if spec then
-		generate({
+		return generate({
 			language = spec.language,
 			side = spec.side or config.defaults.fabric.side,
 			generate_datagen = spec.generate_datagen == nil and config.defaults.fabric.generate_datagen
@@ -43,9 +41,8 @@ function M.generate(project_path, version, spec)
 			kotlin_loader_version = spec.kotlin_loader_version,
 			version_data = spec.fabric_version_data,
 		})
-		return
 	end
-	options.collect(generate)
+	return options.collect(generate)
 end
 
 ---@param ctx ProjectContext
@@ -194,8 +191,8 @@ function M.generate_higher_kotlin(project_path, version, generator_options, spec
 		)
 	end
 
-	gradle_util.generate_gradlew(ctx.path, nil, generator_options.gradle_version)
-	notify.notify(vim.log.levels.INFO, { "fabric", "generated" })
+	local operation = gradle_util.generate_gradlew(ctx.path, nil, generator_options.gradle_version)
+	return operation
 end
 
 ---the function that generate higher version of fabric gradle template
@@ -266,9 +263,8 @@ function M.generate_higher_java(project_path, version, generator_options, spec)
 		)
 	end
 
-	gradle_util.generate_gradlew(ctx.path, nil, generator_options.gradle_version)
-
-	notify.notify(vim.log.levels.INFO, { "fabric", "generated" })
+	local operation = gradle_util.generate_gradlew(ctx.path, nil, generator_options.gradle_version)
+	return operation
 end
 
 return M

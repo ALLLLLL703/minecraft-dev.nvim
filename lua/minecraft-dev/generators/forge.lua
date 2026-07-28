@@ -148,8 +148,7 @@ function M.run(_, project_path, _, spec, platform_name)
 	if spec.use_mixins then
 		fs.write_file(path.join(resources, spec.artifact_id .. ".mixins.json"), mixin_json(spec))
 	end
-	gradle.generate_gradlew(ctx.path)
-	return true
+	return gradle.generate_gradlew(ctx.path)
 end
 
 return M

@@ -99,7 +99,7 @@ When generating a Paper project, the plugin asks for `java` or `kotlin` and uses
 Use the non-interactive API when another plugin or script already has the complete project specification:
 
 ```lua
-local ok, err = require("minecraft-dev").generate({
+local operation = require("minecraft-dev").generate({
   platform = "paper", -- paper, spigot, fabric, bungeecord, waterfall, velocity, or sponge
   build_system = "gradle",
   minecraft_version = "1.21.8",
@@ -109,8 +109,24 @@ local ok, err = require("minecraft-dev").generate({
   package_name = "com.example.example",
   main_class = "ExamplePlugin",
   language = "java",
-})
+}, function(result)
+  if result.status == "generated" then
+    print("Generated at " .. result.path)
+  elseif result.status == "failed" then
+    vim.notify(vim.inspect(result.error), vim.log.levels.ERROR)
+  end
+end)
+
+-- Requests cancellation and remains pending until active child processes exit.
+-- operation.cancel()
 ```
+
+`generate()` and `generate_async()` use the same asynchronous contract. They return an operation whose `status` is
+`pending`, `generated`, `failed`, or `cancelled`; the optional callback runs exactly once with the final result.
+Projects are prepared in a sibling staging directory and only moved into `directory` after wrapper and network work
+finishes. Failed and cancelled generations remove staging output. The destination must be absent or empty.
+Concurrent generation of the same destination returns `generation_in_progress`. A lock left by a crashed process returns
+`stale_generation_lock`; verify that its recorded PID is no longer running before removing the adjacent lock file.
 
 Paper and Spigot specifications also accept `plugin_name`, `plugin_version`, `description`, `authors`, `website`,
 `prefix`, `load`, `load_before`, `depend`, and `soft_depend`. Set `paper_manifest = true` to generate the experimental
@@ -131,7 +147,7 @@ version is derived from the Fabric Language Kotlin version, and asynchronous Fab
 Local MinecraftDev creator descriptors (`.mcdev.template.json`, format versions 1-3) can be generated without UI:
 
 ```lua
-local result, err = require("minecraft-dev").generate_template({
+local operation = require("minecraft-dev").generate_template({
   provider = "local",
   source = "/path/to/template/repository",
   descriptor = "fabric/.mcdev.template.json",
@@ -140,6 +156,11 @@ local result, err = require("minecraft-dev").generate_template({
     PROJECT_NAME = "example",
     LANGUAGE = "Java",
   },
+  callback = function(result)
+    if result.status == "generated" then
+      print("Generated " .. #result.files .. " files")
+    end
+  end,
 })
 ```
 
@@ -150,18 +171,19 @@ The compatibility evaluator supports the Velocity directives and object expressi
 Kotlin templates, including semantic version comparisons, class FQN subpackages, property derivations, and inline
 conditionals.
 
-Available providers are `local`, `archive`, `remote`, and `builtin`. Archive, remote, and builtin providers are
-asynchronous and require `callback = function(result, err) ... end`; the returned handle supports `cancel()`.
+Available providers are `local`, `archive`, `remote`, and `builtin`. Every provider returns the same asynchronous
+operation and accepts `callback = function(result) ... end`; the operation supports `cancel()`.
 `builtin` uses the official `minecraft-dev/templates` repository, while `remote` accepts any Git repository URL.
 Use `list_templates(options)` with the same provider options to discover descriptors before generation.
 
 Supported finalizers are `run_gradle_tasks`, `import_gradle_project`, `import_maven_project`, `add_gradle_run`,
 `add_maven_run`, and `git_add_all`. Import finalizers emit `User MinecraftDevProjectGenerated`; reusable run definitions
-are written to `.nvim/minecraft-dev-runs.json`. External commands remain asynchronous.
+are written to `.nvim/minecraft-dev-runs.json`. External commands remain asynchronous, and template generation only
+becomes `generated` after every finalizer succeeds.
 
-Use `generate_async(spec, callback)` for Fabric projects to refresh Loader and Yarn versions from Fabric Meta and the
-Fabric API version from Modrinth before generation. Successful responses are cached under Neovim's cache directory;
-network or response failures fall back to bundled version data.
+Fabric generation refreshes Loader and Yarn versions from Fabric Meta and the Fabric API version from Modrinth before
+generation. Successful responses are cached under Neovim's cache directory; network or response failures fall back to
+bundled version data and are reported through the generated result's `warnings` field.
 
 ## Contribute
 

@@ -134,8 +134,7 @@ function M.run(_, project_path, _, spec)
 	write(root, "forge/src/main/java/" .. package_path .. "/forge/" .. spec.main_class .. "Forge.java", string.format("package %s.forge;\n\nimport net.minecraftforge.fml.common.Mod;\nimport %s.%s;\n\n@Mod(%s)\npublic final class %sForge {\n    public %sForge() { %s.init(); }\n}\n", spec.package_name, spec.package_name, spec.main_class, quote(spec.artifact_id), spec.main_class, spec.main_class, spec.main_class))
 	write(root, "fabric/src/main/resources/fabric.mod.json", fabric_metadata(spec))
 	write(root, "forge/src/main/resources/META-INF/mods.toml", forge_metadata(spec))
-	gradle.generate_gradlew(root, nil, "8.10.1")
-	return true
+	return gradle.generate_gradlew(root, nil, "8.10.1")
 end
 
 return M

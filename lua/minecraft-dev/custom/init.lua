@@ -186,13 +186,14 @@ local function generate_from_root(options, root)
 		end
 	end
 	local result = { files = generated, descriptor = descriptor, properties = properties }
-	local finalizers = options.skip_finalizers and {} or descriptor.finalizers or {}
+	local finalizers = vim.deepcopy(options.skip_finalizers and {} or descriptor.finalizers or {})
+	if options.use_git then table.insert(finalizers, 1, { type = "git_init" }) end
 	local finalizer_handle, finalizer_error = require("minecraft-dev.custom.finalizers").execute(
 		destination_root,
 		finalizers,
 		properties,
 		function(err)
-			if options.finalizer_callback then options.finalizer_callback(err) end
+			if options.finalizer_callback then pcall(options.finalizer_callback, err) end
 		end
 	)
 	if finalizer_error then return nil, finalizer_error end
@@ -243,22 +244,193 @@ function M.list(options)
 end
 
 ---@param options table
----@return table?, table?
+---@return table
 function M.generate(options)
-	if type(options) ~= "table" then return nil, { code = "invalid_options" } end
-	if options.provider == "local" then
-		return generate_from_root(options, options.source)
+	local operation = { status = "pending" }
+	local staging_path
+	local lock_path
+	local generation_lock
+	local child
+	local callback = type(options) == "table" and options.callback or nil
+	local function finish(result)
+		if operation.status ~= "pending" then return end
+		operation.status = result.status
+		operation.result = result
+		if staging_path and result.status ~= "generated" then vim.fn.delete(staging_path, "rf") end
+		if generation_lock then
+			local released, release_err = generation_lock.release()
+			generation_lock = nil
+			if not released then result.cleanup_error = { code = "lock_cleanup_failed", detail = release_err } end
+		end
+		if callback then vim.schedule(function() callback(result) end) end
 	end
-	if type(options.callback) ~= "function" then return nil, { code = "callback_required" } end
-	return require("minecraft-dev.custom.providers").prepare(options, function(root, provider_error, cleanup)
-		if provider_error then
-			options.callback(nil, provider_error)
+	function operation.cancel()
+		if operation.status ~= "pending" or operation.cancel_requested then return end
+		operation.cancel_requested = true
+		if child and child.on_complete then child.on_complete(function() finish({ status = "cancelled" }) end) end
+		if child and child.cancel then child.cancel() else finish({ status = "cancelled" }) end
+	end
+	if type(options) ~= "table" then finish({ status = "failed", error = { code = "invalid_options" } }); return operation end
+	if type(options.directory) ~= "string" or options.directory == "" then
+		finish({ status = "failed", error = { code = "directory_required" } })
+		return operation
+	end
+	if options.provider == "local" and (type(options.source) ~= "string" or options.source == "") then
+		finish({ status = "failed", error = { code = "source_missing" } })
+		return operation
+	end
+
+	local target = vim.fs.normalize(options.directory)
+	local target_lstat = vim.uv.fs_lstat(target)
+	if target_lstat and target_lstat.type == "link" then
+		finish({ status = "failed", error = { code = "destination_symlink" } })
+		return operation
+	end
+	if target_lstat and target_lstat.type ~= "directory" then
+		finish({ status = "failed", error = { code = "destination_not_directory" } })
+		return operation
+	end
+	local prepared, prepare_err = pcall(vim.fn.mkdir, vim.fs.dirname(target), "p")
+	if not prepared then
+		finish({ status = "failed", error = { code = "destination_prepare_failed", detail = prepare_err } })
+		return operation
+	end
+	local real_parent = vim.uv.fs_realpath(vim.fs.dirname(target))
+	if not real_parent then
+		finish({ status = "failed", error = { code = "destination_prepare_failed" } })
+		return operation
+	end
+	target = vim.fs.joinpath(real_parent, vim.fs.basename(target))
+	local target_stat = vim.uv.fs_stat(target)
+	local target_existed = target_stat ~= nil
+	if target_stat and target_stat.type ~= "directory" then
+		finish({ status = "failed", error = { code = "destination_not_directory" } })
+		return operation
+	end
+	local scan = target_existed and vim.uv.fs_scandir(target) or nil
+	if scan and vim.uv.fs_scandir_next(scan) ~= nil then
+		finish({ status = "failed", error = { code = "destination_not_empty" } })
+		return operation
+	end
+	lock_path = target .. ".minecraft-dev.lock"
+	local lock_error
+	generation_lock, lock_error = require("minecraft-dev.util.lock").acquire(lock_path)
+	if not generation_lock then
+		finish({ status = "failed", error = lock_error })
+		return operation
+	end
+	staging_path = target .. ".minecraft-dev-" .. tostring(vim.uv.hrtime())
+	prepared, prepare_err = pcall(vim.fn.mkdir, staging_path, "p")
+	if not prepared then
+		finish({ status = "failed", error = { code = "destination_prepare_failed", detail = prepare_err } })
+		return operation
+	end
+
+	local function commit(generated)
+		if operation.status ~= "pending" or operation.cancel_requested then return end
+		local target_lstat_now = vim.uv.fs_lstat(target)
+		local target_stat_now = vim.uv.fs_stat(target)
+		local target_exists_now = target_stat_now ~= nil
+		local identity_changed = target_existed and target_stat_now and target_stat
+			and ((target_stat.dev and target_stat_now.dev and target_stat.dev ~= target_stat_now.dev)
+				or (target_stat.ino and target_stat_now.ino and target_stat.ino ~= target_stat_now.ino))
+		if (target_lstat_now and target_lstat_now.type == "link")
+			or (target_stat_now and target_stat_now.type ~= "directory")
+			or identity_changed
+		then
+			finish({ status = "failed", error = { code = "destination_changed" } })
 			return
 		end
-		local result, generation_error = generate_from_root(options, root)
-		if cleanup then cleanup() end
-		options.callback(result, generation_error)
+		local target_scan = target_exists_now and vim.uv.fs_scandir(target) or nil
+		if target_exists_now ~= target_existed or (target_scan and vim.uv.fs_scandir_next(target_scan) ~= nil) then
+			finish({ status = "failed", error = { code = "destination_changed" } })
+			return
+		end
+		local backup_path
+		if target_exists_now then
+			backup_path = staging_path .. ".previous"
+			local moved, backup_err = vim.uv.fs_rename(target, backup_path)
+			if not moved then finish({ status = "failed", error = { code = "destination_commit_failed", detail = backup_err } }); return end
+			local backup_scan = vim.uv.fs_scandir(backup_path)
+			if backup_scan and vim.uv.fs_scandir_next(backup_scan) ~= nil then
+				local restored, restore_err = vim.uv.fs_rename(backup_path, target)
+				if not restored then finish({ status = "failed", error = { code = "destination_rollback_failed", detail = restore_err } }); return end
+				finish({ status = "failed", error = { code = "destination_changed" } })
+				return
+			end
+		end
+		local committed, commit_err = vim.uv.fs_rename(staging_path, target)
+		if not committed then
+			if backup_path then
+				local restored, restore_err = vim.uv.fs_rename(backup_path, target)
+				if not restored then finish({ status = "failed", error = { code = "destination_rollback_failed", detail = { commit = commit_err, rollback = restore_err } } }); return end
+			end
+			finish({ status = "failed", error = { code = "destination_commit_failed", detail = commit_err } })
+			return
+		end
+		local imported, import_err = pcall(
+			require("minecraft-dev.custom.finalizers").emit_imports,
+			target,
+			generated.descriptor.finalizers,
+			generated.properties
+		)
+		if not imported then
+			local displaced = vim.uv.fs_rename(target, staging_path)
+			local restored = not backup_path or vim.uv.fs_rename(backup_path, target)
+			if not displaced or not restored then
+				finish({ status = "failed", error = { code = "destination_rollback_failed", detail = import_err } })
+				return
+			end
+			finish({ status = "failed", error = { code = "finalizer_failed", type = "import_project", detail = import_err } })
+			return
+		end
+		if backup_path and vim.fn.delete(backup_path, "rf") ~= 0 then
+			local displaced = vim.uv.fs_rename(target, staging_path)
+			local restored, restore_err = vim.uv.fs_rename(backup_path, target)
+			if not displaced or not restored then finish({ status = "failed", error = { code = "destination_rollback_failed", detail = restore_err } }); return end
+			finish({ status = "failed", error = { code = "destination_backup_cleanup_failed" } })
+			return
+		end
+		staging_path = nil
+		local files = vim.tbl_map(function(file) return target .. file:sub(#generated.staging_root + 1) end, generated.files)
+		finish({ status = "generated", path = target, files = files, descriptor = generated.descriptor, properties = generated.properties })
+	end
+
+	local function render(root, cleanup)
+		local generation_options = vim.tbl_extend("force", {}, options, { directory = staging_path })
+		local ok, generated, generation_error = pcall(generate_from_root, generation_options, root)
+		if cleanup then
+			local cleaned, cleanup_err = pcall(cleanup)
+			if not cleaned then finish({ status = "failed", error = { code = "provider_cleanup_failed", detail = cleanup_err } }); return end
+		end
+		if not ok then finish({ status = "failed", error = { code = "generation_failed", detail = generated } }); return end
+		if not generated then finish({ status = "failed", error = generation_error }); return end
+		generated.staging_root = staging_path
+		child = generated.finalizer_handle
+		if type(child) == "table" and child.on_complete then
+			child.on_complete(function(result)
+				if result.status == "generated" then commit(generated) else finish(result) end
+			end)
+		else
+			commit(generated)
+		end
+	end
+
+	if options.provider == "local" then
+		render(options.source)
+		return operation
+	end
+	local provider_started, provider_operation, provider_error = pcall(require("minecraft-dev.custom.providers").prepare, options, function(root, err, cleanup)
+		if err then finish({ status = "failed", error = err }); return end
+		render(root, cleanup)
 	end)
+	if not provider_started then
+		finish({ status = "failed", error = { code = "provider_start_failed", detail = provider_operation } })
+		return operation
+	end
+	if provider_error then finish({ status = "failed", error = provider_error }); return operation end
+	if not child then child = provider_operation end
+	return operation
 end
 
 return M

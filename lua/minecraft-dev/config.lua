@@ -64,6 +64,9 @@ M.default_config = {
 		},
 	},
 	messages = {
+		project = {
+			generated = "Generated Minecraft project at %s",
+		},
 		custom = {
 			list_failed = "Failed to list Minecraft templates: %s",
 			generation_failed = "Failed to generate template: %s",

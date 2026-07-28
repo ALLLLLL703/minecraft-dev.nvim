@@ -1,6 +1,5 @@
 local context = require("minecraft-dev.context")
 local fs = require("minecraft-dev.util.fs")
-local notify = require("minecraft-dev.util.notify")
 local path_util = require("minecraft-dev.util.path")
 local templates = require("minecraft-dev.generators.paper.templates")
 local version_util = require("minecraft-dev.version")
@@ -13,13 +12,15 @@ local M = {}
 ---@param version string
 function M.generate(project_path, version, language, spec)
 	local mc_version = version or require("minecraft-dev").config.defaults.paper.version
+	local result
 	options.with_language(language, function(selected_language)
 		if version_util.resolve_family(mc_version) == "v1_13_plus" then
-			M.generate_higher(project_path, mc_version, selected_language, spec)
+			result = M.generate_higher(project_path, mc_version, selected_language, spec)
 			return
 		end
-		M.generate_lower(project_path, mc_version, selected_language, spec)
+		result = M.generate_lower(project_path, mc_version, selected_language, spec)
 	end)
+	return result
 end
 
 ---@param ctx ProjectContext
@@ -77,7 +78,7 @@ function M.generate_higher(project_path, version, language, spec)
 
 	write_main(ctx, lang, "v1_13_plus/Main.java", src_dir)
 
-	notify.notify(vim.log.levels.INFO, { "paper", "generated_maven" }, path, mc_version)
+	return true
 end
 
 ---@param project_path string
@@ -110,6 +111,6 @@ function M.generate_lower(project_path, version, language, spec)
 
 	write_main(ctx, lang, "v1_8/Main.java", src_dir)
 
-	notify.notify(vim.log.levels.INFO, { "paper", "generated_maven" }, path, mc_version)
+	return true
 end
 return M

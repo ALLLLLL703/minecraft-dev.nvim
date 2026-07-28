@@ -5,11 +5,9 @@ function M.run(build, path, version, spec)
 	path = path or vim.fn.getcwd()
 
 	if build == "maven" then
-		require("minecraft-dev.generators.paper.maven").generate(path, version, spec and spec.language, spec)
-		return
+		return require("minecraft-dev.generators.paper.maven").generate(path, version, spec and spec.language, spec)
 	elseif build == "gradle" then
-		require("minecraft-dev.generators.paper.gradle").generate(path, version, spec and spec.language, spec)
-		return
+		return require("minecraft-dev.generators.paper.gradle").generate(path, version, spec and spec.language, spec)
 	end
 
 	notify.notify(vim.log.levels.ERROR, { "command", "unsupported_build" }, tostring(build))

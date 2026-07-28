@@ -165,12 +165,13 @@ function M.run(build_system, project_path, platform_version, spec, platform_name
 	local source_dir = path.join(ctx.path, "src/main", language_dir, ctx.package_path)
 	fs.mkdir(source_dir)
 	fs.write_file(path.join(source_dir, ctx.main .. extension), source_content(ctx, spec, definition.kind))
+	local operation
 	if build_system == "maven" then
 		fs.write_file(path.join(ctx.path, "pom.xml"), build_maven(ctx, spec, definition))
 	else
 		fs.write_file(path.join(ctx.path, "build.gradle.kts"), build_gradle(ctx, spec, definition))
 		fs.write_file(path.join(ctx.path, "settings.gradle.kts"), "rootProject.name = " .. quote(ctx.artifactId) .. "\n")
-		gradle.generate_gradlew(ctx.path)
+		operation = gradle.generate_gradlew(ctx.path)
 	end
 	if definition.kind == "bungee" then
 		local resources = path.join(ctx.path, "src/main/resources")
@@ -181,7 +182,7 @@ function M.run(build_system, project_path, platform_version, spec, platform_name
 		fs.mkdir(resources)
 		fs.write_file(path.join(resources, "sponge_plugins.json"), sponge_metadata(ctx, spec))
 	end
-	return true
+	return operation or true
 end
 
 return M

@@ -111,8 +111,8 @@ local function generate(template, directory, properties)
 		directory = directory,
 		properties = properties,
 		use_git = properties.USE_GIT,
-		callback = function(result, err)
-			if not result then notify.notify(vim.log.levels.ERROR, { "custom", "generation_failed" }, vim.inspect(err)) return end
+		callback = function(result)
+			if result.status ~= "generated" then notify.notify(vim.log.levels.ERROR, { "custom", "generation_failed" }, vim.inspect(result.error)) return end
 			notify.notify(vim.log.levels.INFO, { "custom", "generated" }, directory)
 		end,
 	})

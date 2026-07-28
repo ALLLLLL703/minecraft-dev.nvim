@@ -117,8 +117,9 @@ end
 
 ---@param version string
 ---@param callback fun(data: FabricVersionData, err: table?)
+---@param system? fun(command: string[], options: table, callback: fun(result: table)): table
 ---@return table?, table?
-function M.resolve(version, callback)
+function M.resolve(version, callback, system)
 	if type(callback) ~= "function" then return nil, { code = "callback_required" } end
 	if vim.fn.executable("curl") ~= 1 then callback(M.read(version), { code = "curl_missing" }) return nil, nil end
 	local encoded_version = vim.uri_encode(version)
@@ -129,35 +130,66 @@ function M.resolve(version, callback)
 		kotlin = "https://maven.fabricmc.net/net/fabricmc/fabric-language-kotlin/maven-metadata.xml",
 		loom = "https://maven.fabricmc.net/net/fabricmc/fabric-loom/maven-metadata.xml",
 	}
-	local operation = { handles = {}, cancelled = false }
+	local operation = { handles = {}, status = "pending", callbacks = {} }
+	function operation.on_complete(completion_callback)
+		if operation.result then completion_callback(operation.result) else table.insert(operation.callbacks, completion_callback) end
+		return operation
+	end
+	local function finish(result)
+		if operation.status ~= "pending" then return end
+		operation.status = result.status
+		operation.result = result
+		for _, completion_callback in ipairs(operation.callbacks) do completion_callback(result) end
+		operation.callbacks = {}
+	end
 	function operation.cancel()
-		operation.cancelled = true
+		if operation.status ~= "pending" or operation.cancel_requested then return end
+		operation.cancel_requested = true
 		for _, handle in pairs(operation.handles) do handle:kill(15) end
 	end
 	local responses = {}
 	local optional_sources = { kotlin = true, loom = true }
 	local remaining = vim.tbl_count(urls)
-	local finished = false
+	local required_error
+	local run_system = system or vim.system
 	local function complete(name, result)
-		if operation.cancelled or finished then return end
+		operation.handles[name] = nil
+		remaining = remaining - 1
+		if operation.cancel_requested then
+			if remaining == 0 then finish({ status = "cancelled" }) end
+			return
+		end
 		if result.code ~= 0 then
-			if not optional_sources[name] then
-				finished = true
-				callback(M.read(version), { code = "version_fetch_failed", source = name, detail = result.stderr })
-				return
+			if not optional_sources[name] and not required_error then
+				required_error = { code = "version_fetch_failed", source = name, detail = result.stderr }
 			end
 		else
 			responses[name] = result.stdout
 		end
-		remaining = remaining - 1
 		if remaining > 0 then return end
+		if required_error then
+			callback(M.read(version), required_error)
+			finish({ status = "generated", warnings = { required_error } })
+			return
+		end
 		local ok, data = pcall(M.parse_responses, responses.loader, responses.yarn, responses.api, responses.kotlin, responses.loom)
-		if not ok then callback(M.read(version), { code = "version_response_invalid", detail = data }) return end
+		if not ok then
+			local response_error = { code = "version_response_invalid", detail = data }
+			callback(M.read(version), response_error)
+			finish({ status = "generated", warnings = { response_error } })
+			return
+		end
 		write_cache(version, data)
 		callback(data, nil)
+		finish({ status = "generated" })
 	end
 	for name, url in pairs(urls) do
-		operation.handles[name] = vim.system({ "curl", "--fail", "--silent", "--show-error", "--max-time", "10", url }, { text = true }, vim.schedule_wrap(function(result) complete(name, result) end))
+		local ok, handle = pcall(run_system, { "curl", "--fail", "--silent", "--show-error", "--max-time", "10", url }, { text = true }, vim.schedule_wrap(function(result) complete(name, result) end))
+		if ok then
+			operation.handles[name] = handle
+		else
+			complete(name, { code = 1, stderr = tostring(handle) })
+		end
 	end
 	return operation, nil
 end

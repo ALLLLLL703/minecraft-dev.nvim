@@ -9,20 +9,21 @@ function M.setup(opts)
 end
 
 ---@param spec table
----@return boolean?, table?
-function M.generate(spec)
-	return require("minecraft-dev.project").generate(spec)
+---@param callback? fun(result: table)
+---@return table
+function M.generate(spec, callback)
+	return require("minecraft-dev.project").generate(spec, callback)
 end
 
 ---@param spec table
----@param callback fun(ok: boolean?, err: table?)
----@return table?, table?
+---@param callback? fun(result: table)
+---@return table
 function M.generate_async(spec, callback)
 	return require("minecraft-dev.project").generate_async(spec, callback)
 end
 
 ---@param options table
----@return table?, table?
+---@return table
 function M.generate_template(options)
 	return require("minecraft-dev.custom").generate(options)
 end
