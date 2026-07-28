@@ -113,10 +113,10 @@
 
 上游证据：`templates:bukkit/spigot.mcdev.template.json` 和旧式 `platform/bukkit/creator/`。
 
-- [ ] 动态或维护式版本列表，支持新版本号 `26.1`。
-- [ ] 从 MC 版本派生 `api-version`，不直接复制完整版本号。
-- [ ] version catalog、Shadow、resource-factory。
-- [ ] 评估是否保留独立通用 Bukkit 入口；当前官方仓库模板以 Paper/Spigot 为主。
+- [x] 动态或维护式版本列表，支持新版本号 `26.1`。
+- [x] 从 MC 版本派生 `api-version`，不直接复制完整版本号。
+- [x] version catalog、Shadow、resource-factory。
+- [x] 评估是否保留独立通用 Bukkit 入口；当前官方仓库模板以 Paper/Spigot 为主。
 
 验收：Spigot Java/Kotlin 的 Gradle/Maven 项目均可构建，manifest API version 正确。
 

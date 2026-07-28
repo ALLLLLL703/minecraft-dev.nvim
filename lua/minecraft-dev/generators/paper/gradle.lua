@@ -70,9 +70,26 @@ function M.generate_higher(project_path, version, language, spec, platform_name)
 	local build_gradle_template = templates.read("gradle", "v1_13_plus/build.gradle.kts", lang)
 	build_gradle_template = bukkit_platform.transform_gradle(build_gradle_template, platform_name or (spec and spec.platform) or "paper", ctx.version)
 	local plugin_version = spec and spec.plugin_version or "1.0.0"
+	local java_version = version_util.required_java(ctx.version)
+	local build_gradle_content
+	if lang == "kotlin" then
+		local kotlin_version = java_version >= 25 and "2.4.10" or "2.1.20"
+		local shadow_version = java_version >= 25 and "9.6.1" or "8.3.5"
+		build_gradle_content = string.format(
+			build_gradle_template,
+			kotlin_version,
+			shadow_version,
+			ctx.groupId,
+			plugin_version,
+			ctx.version,
+			java_version
+		)
+	else
+		build_gradle_content = string.format(build_gradle_template, ctx.groupId, plugin_version, ctx.version, java_version)
+	end
 	fs.write_file(
 		path_util.join(path, "build.gradle.kts"),
-		string.format(build_gradle_template, ctx.groupId, plugin_version, ctx.version)
+		build_gradle_content
 	)
 
 	local settings_gradle_template = templates.read("gradle", "v1_13_plus/settings.gradle")
@@ -84,7 +101,7 @@ function M.generate_higher(project_path, version, language, spec, platform_name)
 	)
 
 	write_main(ctx, lang, "v1_13_plus/Main.java", src_dir)
-	local operation = gradle_util.generate_gradlew(path)
+	local operation = gradle_util.generate_gradlew(path, nil, java_version >= 25 and "9.5.0" or nil)
 
 	return operation
 end

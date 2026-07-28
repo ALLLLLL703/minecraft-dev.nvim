@@ -68,7 +68,16 @@ function M.generate_higher(project_path, version, language, spec, platform_name)
 
 	local pom_template = templates.read("maven", "v1_13_plus/pom.xml", lang)
 	pom_template = bukkit_platform.transform_maven(pom_template, platform_name or (spec and spec.platform) or "paper", ctx.version)
-	local pom_content = string.format(pom_template, ctx.groupId, ctx.artifactId, ctx.artifactId, ctx.version)
+	local plugin_version = spec and spec.plugin_version or "1.0.0"
+	local pom_content = string.format(
+		pom_template,
+		ctx.groupId,
+		ctx.artifactId,
+		plugin_version,
+		ctx.artifactId,
+		version_util.required_java(ctx.version),
+		ctx.version
+	)
 	fs.write_file(path_util.join(path, "pom.xml"), pom_content)
 
 	fs.write_file(
@@ -101,7 +110,8 @@ function M.generate_lower(project_path, version, language, spec, platform_name)
 
 	local pom_template = templates.read("maven", "v1_8/pom.xml", lang)
 	pom_template = bukkit_platform.transform_maven(pom_template, platform_name or (spec and spec.platform) or "paper", ctx.version)
-	local pom_content = string.format(pom_template, ctx.groupId, ctx.artifactId, ctx.artifactId, ctx.version)
+	local plugin_version = spec and spec.plugin_version or "1.0.0"
+	local pom_content = string.format(pom_template, ctx.groupId, ctx.artifactId, plugin_version, ctx.artifactId, ctx.version)
 	fs.write_file(path_util.join(path, "pom.xml"), pom_content)
 
 	fs.write_file(

@@ -1,6 +1,6 @@
 plugins {
-    kotlin("jvm") version "2.0.20"
-    id("com.gradleup.shadow") version "8.3.5"
+    kotlin("jvm") version "%s"
+    id("com.gradleup.shadow") version "%s"
 }
 
 group = "%s"
@@ -17,7 +17,7 @@ dependencies {
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(%d)
 }
 
 tasks.build {

@@ -146,12 +146,19 @@ evaluate = function(properties, expression)
 	for _, operator in ipairs({ "||", "&&", "==", "!=", ">=", "<=", ">", "<" }) do
 		local index = find_operator(expression, operator)
 		if index then
-			local left = evaluate(properties, expression:sub(1, index - 1))
-			local right = evaluate(properties, expression:sub(index + #operator))
+			local left_expression = trim(expression:sub(1, index - 1))
+			local right_expression = trim(expression:sub(index + #operator))
+			local left = evaluate(properties, left_expression)
+			local right = evaluate(properties, right_expression)
 			if operator == "||" then return not not left or not not right end
 			if operator == "&&" then return not not left and not not right end
 			if operator == "==" then return left == right end
-			if operator == "!=" then return left ~= right end
+			if operator == "!=" then
+				local explicit_null = left_expression == "null" or left_expression == "$null"
+					or right_expression == "null" or right_expression == "$null"
+				if not explicit_null and (left == nil or right == nil) then return false end
+				return left ~= right
+			end
 			if operator == ">=" then return left >= right end
 			if operator == "<=" then return left <= right end
 			if operator == ">" then return left > right end

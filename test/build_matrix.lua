@@ -23,6 +23,31 @@ M.cases = {
 		spec = project_spec({ platform = "paper", build_system = "maven", minecraft_version = "1.21.8", language = "kotlin" }),
 	},
 	{
+		name = "spigot-calendar-java-gradle",
+		toolchain = { jdk = 25, gradle = "9.5.0" },
+		spec = project_spec({ platform = "spigot", build_system = "gradle", minecraft_version = "26.1.2", language = "java" }),
+	},
+	{
+		name = "spigot-calendar-kotlin-gradle",
+		toolchain = { jdk = 25, gradle = "9.5.0", kotlin = "2.4.10" },
+		spec = project_spec({ platform = "spigot", build_system = "gradle", minecraft_version = "26.1.2", language = "kotlin" }),
+	},
+	{
+		name = "spigot-calendar-java-maven",
+		toolchain = { jdk = 25, maven = true },
+		spec = project_spec({ platform = "spigot", build_system = "maven", minecraft_version = "26.1.2", language = "java" }),
+	},
+	{
+		name = "spigot-calendar-kotlin-maven",
+		toolchain = { jdk = 25, maven = true, kotlin = "2.4.10" },
+		spec = project_spec({ platform = "spigot", build_system = "maven", minecraft_version = "26.1.2", language = "kotlin" }),
+	},
+	{
+		name = "spigot-kotlin-gradle",
+		toolchain = { jdk = 21, gradle = "8.12.1", kotlin = "2.1.20" },
+		spec = project_spec({ platform = "spigot", build_system = "gradle", minecraft_version = "1.21.11", language = "kotlin" }),
+	},
+	{
 		name = "velocity-java-maven",
 		toolchain = { jdk = 21, maven = true },
 		spec = project_spec({ platform = "velocity", build_system = "maven", minecraft_version = "3.5.0-SNAPSHOT", language = "java" }),
@@ -272,6 +297,15 @@ local function build_command(case, cache)
 	return { "./gradlew", "--gradle-user-home", cache.gradle, "build", "--no-daemon", "--console=plain" }
 end
 
+local function case_java_home(expected_jdk, default_home)
+	if not expected_jdk then return default_home end
+	local configured = vim.env["MINECRAFT_DEV_JAVA_" .. expected_jdk .. "_HOME"]
+	if configured and vim.fn.isdirectory(configured) == 1 then return configured end
+	local conventional = "/usr/lib/jvm/java-" .. expected_jdk .. "-openjdk"
+	if vim.fn.isdirectory(conventional) == 1 then return conventional end
+	return default_home
+end
+
 function M.run()
 	local cases, selection_error = M.select_cases(vim.env.MINECRAFT_DEV_MATRIX_CASES)
 	if not cases then error(vim.inspect(selection_error)) end
@@ -310,16 +344,10 @@ function M.run()
 	}
 	local original_java_home = vim.env.JAVA_HOME
 	local original_gradle_home = vim.env.GRADLE_USER_HOME
-	vim.env.JAVA_HOME = jdk
-	vim.env.GRADLE_USER_HOME = cache.gradle
 	local java_executable = jdk and vim.fs.joinpath(jdk, "bin", "java") or "java"
 	local java_version = run_process({ java_executable, "-version" }, root, 15000, env)
 	local java_output = (java_version.stdout or "") .. "\n" .. (java_version.stderr or "")
 	local java_major = tonumber(java_output:match('version "1%.(%d+)')) or tonumber(java_output:match('version "(%d+)'))
-	local java_probe_error = vim.fn.executable(java_executable) ~= 1 and { code = "tool_missing", executable = java_executable }
-		or (java_version.timed_out and { code = "timeout", detail = java_output })
-		or (java_version.start_failed and { code = "process_start_failed", detail = java_version.stderr })
-		or (java_version.code ~= 0 and { code = "tool_failure", detail = java_output })
 	local gradle_version = run_process({ "gradle", "--version" }, root, 15000, env)
 	local gradle_output = (gradle_version.stdout or "") .. "\n" .. (gradle_version.stderr or "")
 	local maven_version = run_process({ "mvn", "--version" }, root, 15000, env)
@@ -344,16 +372,35 @@ function M.run()
 		dirty = git_status.code == 0 and vim.trim(git_status.stdout or "") ~= "" or nil,
 		status = git_status.code == 0 and git_status.stdout or nil,
 	}
+	local cases_ok, cases_error = xpcall(function()
 	for _, case in ipairs(cases) do
 		local started_at = vim.uv.hrtime()
 		local directory = vim.fs.joinpath(root, case.name)
 		local spec = vim.deepcopy(case.spec)
 		spec.directory = directory
+		local selected_java_home = case_java_home(case.toolchain.jdk, jdk)
+		local case_env = vim.tbl_extend("force", {}, env)
+		local case_java_major
+		local case_java_error
+		if selected_java_home then
+			case_env.JAVA_HOME = selected_java_home
+			case_env.PATH = vim.fs.joinpath(selected_java_home, "bin") .. ":" .. vim.env.PATH
+			local case_java = run_process({ vim.fs.joinpath(selected_java_home, "bin", "java"), "-version" }, root, 15000, case_env)
+			local case_java_output = (case_java.stdout or "") .. "\n" .. (case_java.stderr or "")
+			case_java_major = tonumber(case_java_output:match('version "1%.(%d+)')) or tonumber(case_java_output:match('version "(%d+)'))
+			case_java_error = case_java.timed_out and { code = "timeout", detail = case_java_output }
+				or (case_java.start_failed and { code = "process_start_failed", detail = case_java.stderr })
+				or (case_java.code ~= 0 and { code = "tool_failure", detail = case_java_output })
+			vim.env.JAVA_HOME = selected_java_home
+		else
+			case_java_error = { code = "tool_missing", executable = "java", expected_jdk = case.toolchain.jdk }
+		end
+		vim.env.GRADLE_USER_HOME = cache.gradle
 		local operation
-		if java_probe_error then
-			operation = { status = "failed", result = { error = java_probe_error } }
-		elseif case.toolchain.jdk and java_major ~= case.toolchain.jdk then
-			operation = { status = "failed", result = { error = { code = "jdk_mismatch", expected = case.toolchain.jdk, actual = java_major } } }
+		if case_java_error then
+			operation = { status = "failed", result = { error = case_java_error } }
+		elseif case.toolchain.jdk and case_java_major ~= case.toolchain.jdk then
+			operation = { status = "failed", result = { error = { code = "jdk_mismatch", expected = case.toolchain.jdk, actual = case_java_major } } }
 		else
 			vim.notify("[matrix] generating " .. case.name)
 			operation = require("minecraft-dev.project").generate(spec)
@@ -361,7 +408,7 @@ function M.run()
 		if operation.status == "pending" then
 			vim.wait(generation_timeout_ms, function() return operation.status ~= "pending" end, 100)
 		end
-		local result = { name = case.name, spec = case.spec, toolchain = case.toolchain, directory = directory }
+		local result = { name = case.name, spec = case.spec, toolchain = case.toolchain, directory = directory, java_home = selected_java_home }
 		if operation.status == "pending" then
 			operation.cancel()
 			vim.wait(10000, function() return operation.status ~= "pending" end, 100)
@@ -380,7 +427,7 @@ function M.run()
 				result.error = { executable = command[1] }
 			else
 				vim.notify("[matrix] building " .. case.name)
-				local process = run_process(command, directory, timeout_ms, env)
+				local process = run_process(command, directory, timeout_ms, case_env)
 				result.exit_code = process.code
 				result.status = M.classify_process(process)
 				if result.status ~= "passed" then
@@ -393,22 +440,22 @@ function M.run()
 		table.insert(report.cases, result)
 		vim.notify(string.format("[matrix] %s: %s", case.name, result.status))
 	end
+	end, debug.traceback)
+	vim.env.JAVA_HOME = original_java_home
+	vim.env.GRADLE_USER_HOME = original_gradle_home
+	if not cases_ok then error(cases_error) end
 	report.finished_at = os.date("!%Y-%m-%dT%H:%M:%SZ")
 	report.report_path = report_path
 	report.failed = vim.tbl_filter(function(result) return result.status ~= "passed" end, report.cases)
 	local report_ready, report_prepare_error = pcall(vim.fn.mkdir, vim.fs.dirname(report_path), "p")
 	local report_written = report_ready and vim.fn.writefile({ vim.json.encode(report) }, report_path) == 0
 	if not report_written then
-		vim.env.JAVA_HOME = original_java_home
-		vim.env.GRADLE_USER_HOME = original_gradle_home
 		error(vim.inspect({ code = "matrix_report_write_failed", detail = report_prepare_error }))
 	end
 	if not keep_projects and #report.failed == 0 then
 		for _, result in ipairs(report.cases) do vim.fn.delete(result.directory, "rf") end
 		if owns_root then vim.fn.delete(root, "d") end
 	end
-	vim.env.JAVA_HOME = original_java_home
-	vim.env.GRADLE_USER_HOME = original_gradle_home
 	return report
 end
 

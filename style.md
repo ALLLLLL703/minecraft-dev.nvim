@@ -136,3 +136,14 @@ require("minecraft-dev").generate({
 - 保持 `curl`/`vim.system` 生命周期与 Paper Fill selector 一致，并覆盖 metadata 成功、失败、取消、强制 Shadow 与 Gremlin 强制关闭 loader 场景。
 - 已评估 `xml2lua`、SLAXML 和 Lua-Simple-XML-Parser；Maven metadata 只需读取重复的 `<version>` 文本节点，引入完整 XML 依赖会增加安装和运行时负担，因此使用不执行实体、不构建 DOM 的窄解析器。
 - 使用实际上游 Paper descriptor 生成并构建最大 Gradle 组合：Kotlin、version catalog、Gremlin、run-paper、Shadow、paperweight-userdev、resource-factory、Paper manifest、bootstrap、EULA 和 run 配置；JDK 21 下 `./gradlew build` 通过。
+
+## 当前实现切片：P1.2 Spigot
+
+- 官方 `spigot.mcdev.template.json` 的维护式版本列表已包含 `26.1`/`26.1.1`，并复用 P1.1 完成的 version catalog、Shadow、resource-factory、Kotlin metadata 和 `forceValue` 支持，不建立平行实现。
+- 原生 Paper/Spigot 共享生成器将 major 大于 1 的 calendar version 视为现代版本，并按上游 Minecraft Java 边界派生 8/16/17/21/25 toolchain。
+- Gradle 与 Maven、Java 与 Kotlin 模板消费同一 Java 派生；Maven 项目版本改为使用 `plugin_version`，与 manifest 和 Gradle 语义一致。
+- Java 25 项目使用 Gradle 9.5.0；Kotlin 26.x 使用 Kotlin 2.4.10 与 Shadow 9.6.1，旧版本使用 Gradle 8.12.1、Kotlin 2.1.20 与 Shadow 8.3.5。
+- 构建矩阵按 case 选择 JDK，Spigot 26.1.2 的 Java/Kotlin × Gradle/Maven 四组合均真实构建通过；1.21.11 Kotlin Gradle 兼容分支也构建通过。报告为 `/tmp/minecraft-dev-spigot-p12.json`、`/tmp/minecraft-dev-spigot-p12-gradle-fixed.json` 和 `/tmp/minecraft-dev-spigot-p12-old-kotlin.json`。
+- 实际上游 Spigot descriptor 的 version catalog、Shadow 与 resource-factory 组合在 JDK 25 下构建通过，结果为 `/tmp/minecraft-dev-spigot-p12-descriptor.json`。
+- 集成矩阵支持 `MINECRAFT_DEV_MATRIX_NO_QUIT=1`，连接到现有 Neovim 时不再执行 `qa`/`cquit`。
+- 保留 `generators/bukkit/` 为内部共享层，不新增语义不明确、上游新模板未公开的通用 Bukkit 平台入口。

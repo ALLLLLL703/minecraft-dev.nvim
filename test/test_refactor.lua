@@ -11,6 +11,7 @@ local custom_evaluator = require("minecraft-dev.custom.evaluator")
 local custom_property_values = require("minecraft-dev.custom.property_values")
 local fabric_version_data = require("minecraft-dev.generators.fabric.version_data")
 local gradle = require("minecraft-dev.util.gradle")
+local version = require("minecraft-dev.version")
 
 local function assert_equal(actual, expected, message)
 	if not vim.deep_equal(actual, expected) then
@@ -630,12 +631,16 @@ local function test_custom_paper_build_option_wizard()
 #if ($AUTHORS)
 authors
 #end
+#if ($LOAD_AT != "POSTWORLD")
+load=$LOAD_AT
+#end
 ]])
 	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
 		version = 3,
 		properties = {
 			{ name = "LANGUAGE", type = "string" },
 			{ name = "AUTHORS", type = "inline_string_list", default = "", nullIfDefault = true },
+			{ name = "LOAD_AT", type = "string", default = "POSTWORLD", nullIfDefault = true },
 			{
 				name = "SHADOW_PLUGIN", type = "gradle_plugin",
 				forceValue = { condition = "$LANGUAGE == 'Kotlin'", value = "true" },
@@ -653,6 +658,7 @@ authors
 	assert_equal(err, nil, "forced Gradle plugin fixture should not fail")
 	assert_equal(read_file(destination .. "/plugin.txt"), "true|3.0.0", "forceValue should preserve the selected Gradle plugin version during generation")
 	assert_equal(result.properties.AUTHORS, nil, "empty optional inline lists should normalize to nil")
+	assert_equal(result.properties.LOAD_AT, nil, "nullIfDefault should omit non-empty defaults from template values")
 	vim.fn.delete(template_root, "rf")
 	vim.fn.delete(destination, "rf")
 end
@@ -731,7 +737,7 @@ local function test_custom_paper_derivations()
 			{ name = "BUILD_SYSTEM", type = "string" },
 			{ name = "API_VERSION", type = "semantic_version", derives = { parents = { "MC_VERSION" }, method = "extractPaperApiVersion" } },
 			{ name = "DEPENDENCY_VERSION", type = "string", derives = { parents = { "MC_VERSION", "BUILD_SYSTEM" }, method = "fetchPaperDependencyVersionForMcVersion" } },
-			{ name = "JAVA_VERSION", type = "integer", derives = { parents = { "MC_VERSION" }, method = "recommendJavaVersionForMcVersion", default = 17 } },
+			{ name = "JAVA_VERSION", type = "integer", default = 17, derives = { parents = { "MC_VERSION" }, method = "recommendJavaVersionForMcVersion", default = 17 } },
 		},
 		files = { { template = "values.ft", destination = "values.txt" } },
 	}))
@@ -805,6 +811,9 @@ wrong
 	)
 	assert_equal(custom_evaluator.render({ DESCRIPTION = "present" }, "value#if ($DESCRIPTION), description#end"), "value, description", "truthy inline conditions should render without else")
 	assert_equal(custom_evaluator.render({ DESCRIPTION = nil }, "value#if ($DESCRIPTION), description#end"), "value", "false inline conditions should render without else")
+	assert_equal(custom_evaluator.expression({}, '$LOAD_AT != "POSTWORLD"'), false, "missing values should not differ from ordinary defaults")
+	assert_equal(custom_evaluator.expression({}, "$VALUE != $null"), false, "missing values should equal explicit null")
+	assert_equal(custom_evaluator.expression({ VALUE = "set" }, "$VALUE != $null"), true, "present values should differ from explicit null")
 end
 
 local function test_custom_archive_provider()
@@ -1310,6 +1319,7 @@ local function test_spigot_maven_generation()
 	assert_truthy(pom:match("org%.spigotmc") ~= nil, "Spigot Maven project should use the Spigot group")
 	assert_truthy(pom:match("spigot%-api") ~= nil, "Spigot Maven project should depend on spigot-api")
 	assert_truthy(pom:match("hub%.spigotmc%.org") ~= nil, "Spigot Maven project should use the Spigot repository")
+	assert_truthy(pom:match("<version>2%.1%.0</version>") ~= nil, "Spigot Maven project should use the requested project version")
 
 	local manifest = read_file(directory .. "/src/main/resources/plugin.yml")
 	assert_truthy(manifest:match('version: "2%.1%.0"') ~= nil, "manifest should use the requested plugin version")
@@ -1319,6 +1329,61 @@ local function test_spigot_maven_generation()
 	assert_truthy(manifest:match('depend: %[%"RequiredPlugin%"%]') ~= nil, "manifest should include hard dependencies")
 	assert_truthy(manifest:match('softdepend: %[%"OptionalPlugin%"%]') ~= nil, "manifest should include soft dependencies")
 	vim.fn.delete(directory, "rf")
+end
+
+local function test_spigot_calendar_generation()
+	assert_equal(version.resolve_family("26.1.2"), "v1_13_plus", "calendar versions should use modern Bukkit templates")
+	assert_equal(version.required_java("1.16.5"), 8, "Minecraft 1.16.5 should use Java 8")
+	assert_equal(version.required_java("1.17.1"), 16, "Minecraft 1.17.1 should use Java 16")
+	assert_equal(version.required_java("1.20.4"), 17, "Minecraft 1.20.4 should use Java 17")
+	assert_equal(version.required_java("1.20.4-R0.1-SNAPSHOT"), 17, "dependency qualifiers should not change the Minecraft Java boundary")
+	assert_equal(version.required_java("1.21.11"), 21, "Minecraft 1.21.11 should use Java 21")
+	assert_equal(version.required_java("1.21.11-pre1"), 21, "prerelease suffixes should not cross the Java 25 boundary")
+	assert_equal(version.required_java("26.1"), 25, "Minecraft 26.1 should use Java 25")
+	assert_equal(version.required_java("invalid"), 21, "invalid versions should use the safe default Java version")
+
+	local original_generate_gradlew = gradle.generate_gradlew
+	local wrapper_versions = {}
+	gradle.generate_gradlew = function(_, _, wrapper_version)
+		table.insert(wrapper_versions, wrapper_version)
+		return true
+	end
+	for _, case in ipairs({
+		{ build_system = "gradle", language = "java", build_file = "build.gradle.kts", java_marker = "JavaLanguageVersion.of(25)" },
+		{ build_system = "gradle", language = "kotlin", build_file = "build.gradle.kts", java_marker = "jvmToolchain(25)" },
+		{ build_system = "maven", language = "java", build_file = "pom.xml", java_marker = "<java.version>25</java.version>" },
+		{ build_system = "maven", language = "kotlin", build_file = "pom.xml", java_marker = "<java.version>25</java.version>" },
+	}) do
+		local directory = vim.fn.tempname()
+		vim.fn.mkdir(directory, "p")
+		local ok, err = generate_project({
+			platform = "spigot",
+			build_system = case.build_system,
+			minecraft_version = "26.1.2",
+			directory = directory,
+			group_id = "com.example",
+			artifact_id = "spigot-calendar",
+			package_name = "com.example.spigot",
+			main_class = "SpigotCalendar",
+			language = case.language,
+			plugin_version = "3.4.5",
+		})
+		assert_equal(ok, true, "Spigot calendar project should generate for " .. case.language .. " " .. case.build_system)
+		assert_equal(err, nil, "Spigot calendar generation should not fail")
+		local build = read_file(directory .. "/" .. case.build_file)
+		assert_truthy(build:find("org.spigotmc", 1, true) ~= nil, "Spigot calendar project should use Spigot coordinates")
+		assert_truthy(build:find(case.java_marker, 1, true) ~= nil, "Spigot calendar project should use Java 25")
+		assert_truthy(build:find("3.4.5", 1, true) ~= nil, "Spigot calendar project should use plugin_version")
+		if case.build_system == "gradle" and case.language == "kotlin" then
+			assert_truthy(build:find('kotlin("jvm") version "2.4.10"', 1, true) ~= nil, "Spigot Java 25 Kotlin project should use a compatible Kotlin plugin")
+			assert_truthy(build:find('id("com.gradleup.shadow") version "9.6.1"', 1, true) ~= nil, "Spigot Java 25 Kotlin project should use a compatible Shadow plugin")
+		end
+		local manifest = read_file(directory .. "/src/main/resources/plugin.yml")
+		assert_truthy(manifest:find('api-version: "26.1"', 1, true) ~= nil, "Spigot calendar manifest should derive major.minor api-version")
+		vim.fn.delete(directory, "rf")
+	end
+	gradle.generate_gradlew = original_generate_gradlew
+	assert_equal(wrapper_versions, { "9.5.0", "9.5.0" }, "Spigot Java 25 Gradle projects should use a compatible wrapper")
 end
 
 local function test_paper_manifest_generation()
@@ -1868,6 +1933,7 @@ local function run()
 	test_additional_plugin_platforms()
 	test_gradle_wrapper_generation_isolated_from_project()
 	test_spigot_maven_generation()
+	test_spigot_calendar_generation()
 	test_paper_manifest_generation()
 	test_project_validation()
 	test_project_generation_results()

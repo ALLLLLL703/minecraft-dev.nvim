@@ -110,7 +110,7 @@ local function collect_properties(descriptor, provided)
 	local flattened = {}
 	flatten_properties(descriptor.properties, flattened)
 	for _, property in ipairs(flattened) do
-		if properties[property.name] == nil and property.default ~= nil then
+		if properties[property.name] == nil and property.default ~= nil and not property.derives then
 			if property.options and type(property.default) == "number" then
 				properties[property.name] = property.options[property.default + 1]
 			elseif property.type ~= "jdk" and (type(property.default) ~= "string" or property.default:sub(1, 1) ~= "$") then
