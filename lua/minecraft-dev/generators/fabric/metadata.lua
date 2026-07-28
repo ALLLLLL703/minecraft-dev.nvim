@@ -6,6 +6,8 @@ local M = {}
 ---@field generate_datagen boolean
 ---@field use_mixins boolean
 ---@field loom_version? string
+---@field gradle_version? string
+---@field kotlin_loader_version? string
 ---@field version_data? FabricVersionData
 
 ---@param side "client"|"server"|"both"
@@ -83,17 +85,22 @@ end
 ---@return table<string, string[]>
 function M.entrypoints(ctx, options)
 	local entrypoints = {}
+	local function value(class_name)
+		if options.language == "kotlin" then return { adapter = "kotlin", value = class_name } end
+		return class_name
+	end
 
 	if options.side ~= "client" then
-		entrypoints.main = { string.format("%s.%s", ctx.package, M.main_class_name(ctx, options)) }
+		entrypoints.main = { value(string.format("%s.%s", ctx.package, M.main_class_name(ctx, options))) }
 	end
 
 	if options.side ~= "server" then
-		entrypoints.client = { string.format("%s.%s", ctx.package, M.client_class_name(ctx, options)) }
+		local client_package = options.language == "kotlin" and ctx.package .. ".client" or ctx.package
+		entrypoints.client = { value(string.format("%s.%s", client_package, M.client_class_name(ctx, options))) }
 	end
 
 	if options.generate_datagen then
-		entrypoints["fabric-datagen"] = { string.format("%s.%s", ctx.package, M.datagen_class_name(ctx, options)) }
+		entrypoints["fabric-datagen"] = { value(string.format("%s.%s", ctx.package, M.datagen_class_name(ctx, options))) }
 	end
 
 	return entrypoints
@@ -147,10 +154,19 @@ function M.build_mod_json(ctx, options)
 	end
 
 	table.insert(lines, indent(1) .. quote("depends") .. ": {")
-	table.insert(lines, indent(2) .. quote("fabricloader") .. ": " .. quote(">=0.15.0") .. ",")
-	table.insert(lines, indent(2) .. quote("minecraft") .. ": " .. quote("~" .. ctx.version) .. ",")
-	table.insert(lines, indent(2) .. quote("java") .. ": " .. quote(">=21") .. ",")
-	table.insert(lines, indent(2) .. quote("fabric-api") .. ": " .. quote("*"))
+	local dependencies = {
+		{ "fabricloader", ">=0.15.0" },
+		{ "minecraft", "~" .. ctx.version },
+		{ "java", ">=21" },
+		{ "fabric-api", "*" },
+	}
+	if options.language == "kotlin" then
+		table.insert(dependencies, 2, { "fabric-language-kotlin", ">=" .. options.kotlin_loader_version })
+	end
+	for index, dependency in ipairs(dependencies) do
+		local suffix = index < #dependencies and "," or ""
+		table.insert(lines, indent(2) .. quote(dependency[1]) .. ": " .. quote(dependency[2]) .. suffix)
+	end
 	table.insert(lines, indent(1) .. "}")
 	table.insert(lines, "}")
 

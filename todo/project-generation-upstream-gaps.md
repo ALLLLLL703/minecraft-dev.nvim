@@ -39,10 +39,10 @@
 
 现状：Kotlin 只切换源码模板，公共 `archetype/fabric_gradle/build.gradle` 没有 Kotlin Gradle 插件、Kotlin stdlib 或 Fabric Language Kotlin。README 却声明支持 Kotlin。
 
-- [ ] Kotlin 项目生成 `build.gradle.kts` 或正确配置 Kotlin 的 Gradle 脚本。
-- [ ] 动态选择 Kotlin、Fabric Language Kotlin 和 Loom 的兼容版本。
-- [ ] Java 和 Kotlin 分别验证 main/client/datagen/Mixin 组合。
-- [ ] 用 JDK 21 执行生成项目的真实 `gradlew build`。
+- [x] Kotlin 项目生成 `build.gradle.kts` 或正确配置 Kotlin 的 Gradle 脚本。
+- [x] 动态选择 Kotlin、Fabric Language Kotlin 和 Loom 的兼容版本。
+- [x] Java 和 Kotlin 分别验证 main/client/datagen/Mixin 组合。
+- [x] 用 JDK 21 执行生成项目的真实 `gradlew build`。
 
 验收：Fabric Java、Fabric Kotlin 各至少一个高级选项全开的项目能够从空缓存构建。
 

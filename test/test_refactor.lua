@@ -331,11 +331,41 @@ local function test_fabric_online_version_parser()
 	local parsed = fabric_version_data.parse_responses(
 		vim.json.encode({ { loader = { version = "0.19.3", stable = true } } }),
 		vim.json.encode({ { version = "1.21.1+build.3" } }),
-		vim.json.encode({ { version_number = "0.116.14+1.21.1" } })
+		vim.json.encode({ { version_number = "0.116.14+1.21.1" } }),
+		"<metadata><versioning><release> 1.13.13+kotlin.2.4.10 </release></versioning></metadata>",
+		"<metadata><versioning><release>1.15.2</release><versions><version>1.15.2</version><version>1.16-SNAPSHOT</version></versions></versioning></metadata>"
 	)
 	assert_equal(parsed.loader, "0.19.3", "online parser should select loader version")
 	assert_equal(parsed.yarn, "1.21.1+build.3", "online parser should select latest Yarn mapping")
 	assert_equal(parsed.fabric_api, "0.116.14+1.21.1", "online parser should select latest Fabric API")
+	assert_equal(parsed.kotlin_loader, "1.13.13+kotlin.2.4.10", "online parser should select released Fabric Language Kotlin")
+	assert_equal(parsed.loom_version, "1.15.2", "online parser should select released Fabric Loom")
+	assert_equal(parsed.gradle_version, "9.6.1", "online Fabric versions should use the compatible Gradle wrapper")
+	local fallback = fabric_version_data.parse_responses(
+		vim.json.encode({ { loader = { version = "0.19.3" } } }),
+		vim.json.encode({}),
+		vim.json.encode({ { version_number = "0.116.14+1.21.1" } }),
+		"<metadata><versioning><release>garbage+kotlin.</release></versioning></metadata>",
+		nil
+	)
+	assert_equal(fallback.kotlin_loader, config.default_config.defaults.fabric.version_data.kotlin_loader, "Kotlin metadata failure should use configured fallback")
+	assert_equal(fallback.loom_version, config.default_config.defaults.fabric.version_data.loom_version, "Loom metadata failure should use configured fallback")
+	local bundled = fabric_version_data.read("1.14.4")
+	assert_truthy(bundled.kotlin_loader ~= nil, "bundled Fabric versions should inherit the Kotlin fallback")
+	assert_truthy(bundled.loom_version ~= nil, "bundled Fabric versions should inherit the Loom fallback")
+	assert_truthy(bundled.gradle_version ~= nil, "bundled Fabric versions should inherit the Gradle fallback")
+	local invalid_cache_version = "minecraft-dev-invalid-cache-test"
+	local invalid_cache_path = vim.fs.joinpath(vim.fn.stdpath("cache"), "minecraft-dev", "fabric", invalid_cache_version .. ".json")
+	vim.fn.mkdir(vim.fs.dirname(invalid_cache_path), "p")
+	vim.fn.writefile({ vim.json.encode({ kotlin_loader = "invalid", loom_version = "", gradle_version = "" }) }, invalid_cache_path)
+	local normalized_cache = fabric_version_data.read(invalid_cache_version)
+	assert_equal(normalized_cache.kotlin_loader, config.default_config.defaults.fabric.version_data.kotlin_loader, "invalid cached Kotlin versions should use configured fallback")
+	assert_equal(normalized_cache.loom_version, config.default_config.defaults.fabric.version_data.loom_version, "empty cached Loom versions should use configured fallback")
+	assert_equal(normalized_cache.gradle_version, config.default_config.defaults.fabric.version_data.gradle_version, "empty cached Gradle versions should use configured fallback")
+	vim.fn.writefile({ vim.json.encode("invalid") }, invalid_cache_path)
+	local scalar_cache = fabric_version_data.read(invalid_cache_version)
+	assert_equal(scalar_cache.kotlin_loader, config.default_config.defaults.fabric.version_data.kotlin_loader, "scalar Fabric cache data should be ignored")
+	vim.fn.delete(invalid_cache_path)
 end
 
 local function test_forge_family_generation()
@@ -628,6 +658,73 @@ local function test_noninteractive_fabric_generation()
 	vim.fn.delete(directory, "rf")
 end
 
+local function test_noninteractive_fabric_kotlin_generation()
+	local directory = vim.fn.tempname()
+	vim.fn.mkdir(directory, "p")
+	local gradle = require("minecraft-dev.util.gradle")
+	local original_generate_gradlew = gradle.generate_gradlew
+	local original_input = vim.fn.input
+	gradle.generate_gradlew = function() end
+	vim.fn.input = function() error("non-interactive Fabric Kotlin generation must not request input") end
+
+	local generation_spec = {
+		platform = "fabric",
+		build_system = "gradle",
+		minecraft_version = "1.21.1",
+		directory = directory,
+		group_id = "com.example",
+		artifact_id = "example",
+		package_name = "com.example.example",
+		main_class = "ExampleMod",
+		language = "kotlin",
+		side = "both",
+		generate_datagen = true,
+		use_mixins = true,
+		fabric_version_data = {
+			loader = "0.16.14",
+			fabric_api = "0.116.0+1.21.1",
+			kotlin_loader = "1.13.13+kotlin.2.4.10",
+			loom_version = "1.10-SNAPSHOT",
+			gradle_version = "8.12.1",
+		},
+	}
+	local invalid, invalid_err = project.generate(vim.tbl_deep_extend("force", {}, generation_spec, {
+		fabric_version_data = { kotlin_loader = "garbage+1.13.13+kotlin.2.4.10" },
+	}))
+	assert_equal(invalid, nil, "invalid Fabric Language Kotlin versions should be rejected")
+	assert_equal(invalid_err.code, "invalid_version", "invalid Fabric Language Kotlin versions should return a structured error")
+	local ok, err = project.generate(generation_spec)
+
+	assert_equal(ok, true, "public API should generate a Fabric Kotlin project")
+	assert_equal(err, nil, "successful Fabric Kotlin generation should not return an error")
+	assert_equal(vim.fn.filereadable(directory .. "/build.gradle.kts"), 1, "Fabric Kotlin should use Kotlin Gradle DSL")
+	assert_equal(vim.fn.filereadable(directory .. "/settings.gradle.kts"), 1, "Fabric Kotlin should use Kotlin settings DSL")
+	local build = read_file(directory .. "/build.gradle.kts")
+	assert_truthy(build:find('kotlin("jvm") version "2.4.10"', 1, true) ~= nil, "Fabric Kotlin should use the Kotlin version bundled by Fabric Language Kotlin")
+	assert_truthy(build:find("fabric-language-kotlin:1.13.13+kotlin.2.4.10", 1, true) ~= nil, "Fabric Kotlin should depend on Fabric Language Kotlin")
+	assert_truthy(build:find('val minecraftVersion = project.property("minecraft_version") as String', 1, true) ~= nil, "Fabric Kotlin resource expansion should use typed properties")
+	local mod_json = vim.json.decode(read_file(directory .. "/src/main/resources/fabric.mod.json"))
+	assert_equal(mod_json.entrypoints.main[1].adapter, "kotlin", "Fabric Kotlin main entrypoint should use the Kotlin adapter")
+	assert_equal(mod_json.entrypoints.client[1].value, "com.example.example.client.ExampleModClient", "Fabric Kotlin client entrypoint should match its package")
+	assert_equal(mod_json.depends["fabric-language-kotlin"], ">=1.13.13+kotlin.2.4.10", "Fabric Kotlin metadata should require Fabric Language Kotlin")
+	local mixin = read_file(directory .. "/src/main/kotlin/com/example/example/mixin/ExampleModMixin.kt")
+	assert_truthy(mixin:find("`minecraftDev$exampleInjection`", 1, true) ~= nil, "Fabric Kotlin mixin should escape its JVM method name")
+	vim.fn.delete(directory, "rf")
+
+	local client_directory = vim.fn.tempname()
+	vim.fn.mkdir(client_directory, "p")
+	generation_spec.directory = client_directory
+	generation_spec.side = "client"
+	local client_ok, client_err = project.generate(generation_spec)
+	assert_equal(client_ok, true, "client-only Fabric Kotlin generation should succeed")
+	assert_equal(client_err, nil, "client-only Fabric Kotlin generation should not return an error")
+	assert_equal(vim.fn.filereadable(client_directory .. "/src/client/kotlin/com/example/example/mixin/ExampleModMixin.kt"), 1, "client-only mixins should use the client source set")
+	assert_equal(vim.fn.filereadable(client_directory .. "/src/main/kotlin/com/example/example/mixin/ExampleModMixin.kt"), 0, "client-only mixins should not use the main source set")
+	vim.fn.delete(client_directory, "rf")
+	gradle.generate_gradlew = original_generate_gradlew
+	vim.fn.input = original_input
+end
+
 local function test_config_normalize_legacy_debug()
 	local normalized = config.normalize({ debug = true })
 	assert_equal(normalized.logging.debug, true, "legacy debug should map to logging.debug")
@@ -669,8 +766,8 @@ local function test_fabric_metadata_client_only()
 
 	assert_truthy(mod_json:match('"environment": "client"') ~= nil, "client mode should set client environment")
 	assert_truthy(mod_json:match('"client"') ~= nil, "client mode should include client entrypoint")
-	assert_truthy(mod_json:match('com%.example%.demo%.MainClient') ~= nil, "client entrypoint should match generated package")
-	assert_truthy(mod_json:match('com%.example%.demo%.client%.MainClient') == nil, "client entrypoint should not add missing package")
+	assert_truthy(mod_json:match('com%.example%.demo%.MainClient') ~= nil, "Java client entrypoint should match generated package")
+	assert_truthy(mod_json:match('com%.example%.demo%.client%.MainClient') == nil, "Java client entrypoint should not add a Kotlin-only package")
 	assert_truthy(mod_json:match('"main"') == nil, "client mode should omit main entrypoint")
 	assert_truthy(mod_json:match('"fabric%-datagen"') == nil, "client mode should omit datagen when disabled")
 end
@@ -730,6 +827,7 @@ local function run()
 	test_project_validation()
 	test_noninteractive_paper_generation()
 	test_noninteractive_fabric_generation()
+	test_noninteractive_fabric_kotlin_generation()
 	test_config_normalize_legacy_debug()
 	test_config_normalize_nested_override()
 	test_resolve_path_with_default()

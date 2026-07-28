@@ -65,6 +65,10 @@ require("minecraft-dev").setup({
 			side = "both",
 			generate_datagen = true,
 			use_mixins = false,
+			version_data = {
+				gradle_version = "9.6.1",
+				kotlin_loader = "1.13.13+kotlin.2.4.10",
+			},
 		},
 	},
 })
@@ -117,6 +121,10 @@ Forge and NeoForge use Gradle and require `loader_version`. They also accept `pa
 
 Architectury uses Gradle and requires `fabric_loader_version`, `fabric_api_version`, `forge_version`, and
 `architectury_api_version`. It generates `common`, `fabric`, and `forge` modules.
+
+Fabric Kotlin projects generate Kotlin Gradle DSL files and use Fabric Language Kotlin. Set `kotlin_loader_version`
+on an individual specification, or `defaults.fabric.version_data.kotlin_loader` globally. The Kotlin compiler plugin
+version is derived from the Fabric Language Kotlin version, and asynchronous Fabric version refreshes update both.
 
 ### Custom Templates
 

@@ -64,6 +64,14 @@ function M.validate(spec)
 	if spec.language ~= "java" and spec.language ~= "kotlin" then
 		return nil, validation_error("unsupported_language", "language")
 	end
+	if spec.platform == "fabric" and spec.language == "kotlin" then
+		local fabric_versions = spec.fabric_version_data or {}
+		local defaults = require("minecraft-dev").config.defaults.fabric.version_data
+		local kotlin_loader = spec.kotlin_loader_version or fabric_versions.kotlin_loader or defaults.kotlin_loader
+		if type(kotlin_loader) ~= "string" or not kotlin_loader:match("^[%w_.-]+%+kotlin%.[%w_.-]+$") then
+			return nil, validation_error("invalid_version", "kotlin_loader_version")
+		end
+	end
 	if spec.platform == "forge" or spec.platform == "neoforge" then
 		if spec.language ~= "java" then
 			return nil, validation_error("unsupported_language", "language")

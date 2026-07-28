@@ -39,6 +39,8 @@ function M.generate(project_path, version, spec)
 				or spec.generate_datagen,
 			use_mixins = spec.use_mixins == nil and config.defaults.fabric.use_mixins or spec.use_mixins,
 			loom_version = spec.loom_version,
+			gradle_version = spec.gradle_version,
+			kotlin_loader_version = spec.kotlin_loader_version,
 			version_data = spec.fabric_version_data,
 		})
 		return
@@ -58,15 +60,33 @@ local function generate_basic(ctx, generator_options)
 		fs.mkdir(resources_client_dir)
 	end
 
-	local build_gradle_content = templates.read("build.gradle", ctx.lang)
-	fs.write_file(path_util.join(ctx.path, "build.gradle"), string.format(build_gradle_content))
+	local explicit_loom_version = generator_options.loom_version ~= nil
 	local default_loom_version = json_data_table.loom_version or config.defaults.fabric.version_data.loom_version
-	local fabric_loom_version = generator_options.loom_version
+	local fabric_loom_version = generator_options.loom_version or json_data_table.loom_version
 	if not fabric_loom_version then
 		fabric_loom_version = input_util.not_empty_or(
 			vim.fn.input(config.prompts.fabric.loom_version, default_loom_version),
 			default_loom_version
 		)
+	end
+	if not explicit_loom_version and not generator_options.gradle_version then
+		generator_options.gradle_version = json_data_table.gradle_version
+			or config.defaults.fabric.version_data.gradle_version
+	end
+	local kotlin_loader_version = generator_options.kotlin_loader_version
+		or json_data_table.kotlin_loader
+		or config.defaults.fabric.version_data.kotlin_loader
+	generator_options.kotlin_loader_version = kotlin_loader_version
+	if ctx.lang == "kotlin" then
+		local kotlin_version = assert(kotlin_loader_version:match("%+kotlin%.(.+)$"), "invalid Fabric Language Kotlin version")
+		local build_gradle_content = templates.read("build.gradle.kts", ctx.lang)
+		fs.write_file(
+			path_util.join(ctx.path, "build.gradle.kts"),
+			string.format(build_gradle_content, kotlin_version, fabric_loom_version, kotlin_loader_version)
+		)
+	else
+		local build_gradle_content = templates.read("build.gradle", ctx.lang)
+		fs.write_file(path_util.join(ctx.path, "build.gradle"), string.format(build_gradle_content))
 	end
 
 	local gradle_properties_content = templates.read("gradle.properties", ctx.lang)
@@ -85,12 +105,14 @@ local function generate_basic(ctx, generator_options)
 			ctx.artifactId,
 			fabric_api,
 			fabric_loom_version,
-			json_data_table.yarn
+			json_data_table.yarn,
+			kotlin_loader_version
 		)
 	)
 
-	local settings_gradle_content = templates.read("settings.gradle", ctx.lang)
-	fs.write_file(path_util.join(ctx.path, "settings.gradle"), string.format(settings_gradle_content))
+	local settings_name = ctx.lang == "kotlin" and "settings.gradle.kts" or "settings.gradle"
+	local settings_gradle_content = templates.read(settings_name, ctx.lang)
+	fs.write_file(path_util.join(ctx.path, settings_name), string.format(settings_gradle_content))
 
 	fs.write_file(path_util.join(resources_dir, "fabric.mod.json"), metadata.build_mod_json(ctx, generator_options))
 
@@ -156,7 +178,8 @@ function M.generate_higher_kotlin(project_path, version, generator_options, spec
 
 	if generator_options.use_mixins then
 		local mixin_package_path = metadata.mixin_package(ctx, generator_options):gsub("%.", "/")
-		local mixin_dir = path_util.join(ctx.path, "src/main/kotlin", mixin_package_path)
+		local source_set = generator_options.side == "client" and "client" or "main"
+		local mixin_dir = path_util.join(ctx.path, "src", source_set, "kotlin", mixin_package_path)
 		fs.mkdir(mixin_dir)
 		local mixin_template = templates.read("Mixin.kt", ctx.lang)
 		fs.write_file(
@@ -171,7 +194,7 @@ function M.generate_higher_kotlin(project_path, version, generator_options, spec
 		)
 	end
 
-	gradle_util.generate_gradlew(ctx.path)
+	gradle_util.generate_gradlew(ctx.path, nil, generator_options.gradle_version)
 	notify.notify(vim.log.levels.INFO, { "fabric", "generated" })
 end
 
@@ -227,7 +250,8 @@ function M.generate_higher_java(project_path, version, generator_options, spec)
 
 	if generator_options.use_mixins then
 		local mixin_package_path = metadata.mixin_package(ctx, generator_options):gsub("%.", "/")
-		local mixin_dir = path_util.join(ctx.path, "src/main/java", mixin_package_path)
+		local source_set = generator_options.side == "client" and "client" or "main"
+		local mixin_dir = path_util.join(ctx.path, "src", source_set, "java", mixin_package_path)
 		fs.mkdir(mixin_dir)
 		local mixin_template = templates.read("Mixin.java", ctx.lang)
 		fs.write_file(
@@ -242,7 +266,7 @@ function M.generate_higher_java(project_path, version, generator_options, spec)
 		)
 	end
 
-	gradle_util.generate_gradlew(ctx.path)
+	gradle_util.generate_gradlew(ctx.path, nil, generator_options.gradle_version)
 
 	notify.notify(vim.log.levels.INFO, { "fabric", "generated" })
 end

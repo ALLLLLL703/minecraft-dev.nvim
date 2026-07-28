@@ -84,3 +84,12 @@ require("minecraft-dev").generate({
 - Fabric Meta API 与 Fabric Example Mod：版本解析和 Gradle 项目结构。
 - Paper/Velocity/Sponge 官方开发文档：依赖坐标和插件元数据。
 - Forge/NeoForge/Architectury 官方 MDK 或示例项目：Gradle 插件、运行配置和多模块结构。
+
+## 当前实现切片：P0.1 Fabric Kotlin
+
+- 参考 `minecraft-dev/templates@40b091262cff4130b9f61bc25de6cb9e2439d745` 的 Fabric Kotlin DSL 模板。
+- 参考 `FabricMC/fabric-language-kotlin` 官方 README 的依赖和 `adapter: "kotlin"` 入口协议。
+- Kotlin 项目生成独立 `build.gradle.kts` 与 `settings.gradle.kts`，Java 项目保持现有 Groovy DSL。
+- `FabricVersionData` 增加 Fabric Language Kotlin 版本；在线解析 Maven metadata，离线使用配置默认值。
+- Kotlin 编译器版本从 `fabric-language-kotlin` 的 `+kotlin.<version>` 后缀派生，避免维护第二个平行版本。
+- 通过公共 `project.generate()` 添加回归测试，并以 JDK 21 对 main/client/datagen/Mixin 全开项目执行真实 `gradlew build`。

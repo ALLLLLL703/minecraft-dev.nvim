@@ -20,27 +20,47 @@ local function decode(content)
 	return ok and value or nil
 end
 
+local function release_version(content)
+	local value = content and content:match("<release>%s*([^<]+)</release>")
+	return value and vim.trim(value) or nil
+end
+
+local function valid_kotlin_loader(value)
+	return type(value) == "string" and value:match("^[%w_.-]+%+kotlin%.[%w_.-]+$") ~= nil
+end
+
 ---@param loader_content string
 ---@param yarn_content string
 ---@param api_content string
+---@param kotlin_content string
+---@param loom_content string
 ---@return FabricVersionData
-function M.parse_responses(loader_content, yarn_content, api_content)
+function M.parse_responses(loader_content, yarn_content, api_content, kotlin_content, loom_content)
 	local loaders = assert(decode(loader_content), "invalid Fabric loader response")
 	local yarn = assert(decode(yarn_content), "invalid Yarn response")
 	local api = assert(decode(api_content), "invalid Fabric API response")
+	local defaults = require("minecraft-dev").config.defaults.fabric.version_data
+	local kotlin_loader = release_version(kotlin_content)
+	if not valid_kotlin_loader(kotlin_loader) then kotlin_loader = defaults.kotlin_loader end
+	local loom_version = release_version(loom_content) or defaults.loom_version
 	assert(loaders[1] and loaders[1].loader and loaders[1].loader.version, "Fabric loader response is empty")
 	assert(api[1] and api[1].version_number, "Fabric API response is empty")
+	assert(loom_version, "Fabric Loom response is empty")
 	return {
 		loader = loaders[1].loader.version,
 		yarn = yarn[1] and yarn[1].version or nil,
 		fabric_api = api[1].version_number,
-		loom_version = require("minecraft-dev").config.defaults.fabric.version_data.loom_version,
+		kotlin_loader = kotlin_loader,
+		loom_version = loom_version,
+		gradle_version = defaults.gradle_version,
 	}
 end
 
 ---@class FabricVersionData
 ---@field loom_version string
+---@field gradle_version string
 ---@field fabric_api string|string[]
+---@field kotlin_loader string
 ---@field loader string
 ---@field yarn string?
 
@@ -49,13 +69,23 @@ function M.default_data()
 	return vim.deepcopy(require("minecraft-dev").config.defaults.fabric.version_data)
 end
 
+local function with_defaults(data)
+	local defaults = M.default_data()
+	local merged = vim.tbl_deep_extend("force", defaults, data)
+	if not valid_kotlin_loader(merged.kotlin_loader) then merged.kotlin_loader = defaults.kotlin_loader end
+	for _, key in ipairs({ "loom_version", "gradle_version" }) do
+		if type(merged[key]) ~= "string" or vim.trim(merged[key]) == "" then merged[key] = defaults[key] end
+	end
+	return merged
+end
+
 ---@param version string
 ---@return FabricVersionData
 function M.read(version)
 	local cached = decode(read_path(cache_path(version)))
-	if cached then
+	if type(cached) == "table" and not vim.islist(cached) then
 		cached._cached_at = nil
-		return cached
+		return with_defaults(cached)
 	end
 	local runtime_path = "data/fabric/versions/" .. version .. ".json"
 	local files = vim.api.nvim_get_runtime_file(runtime_path, true)
@@ -71,7 +101,7 @@ function M.read(version)
 	end
 
 	notify.debug({ "data", "reading_json" }, files[1])
-	return vim.fn.json_decode(content)
+	return with_defaults(vim.fn.json_decode(content))
 end
 
 local function write_cache(version, data)
@@ -96,6 +126,8 @@ function M.resolve(version, callback)
 		loader = "https://meta.fabricmc.net/v2/versions/loader/" .. encoded_version,
 		yarn = "https://meta.fabricmc.net/v2/versions/yarn/" .. encoded_version,
 		api = "https://api.modrinth.com/v2/project/fabric-api/version?game_versions=%5B%22" .. encoded_version .. "%22%5D&loaders=%5B%22fabric%22%5D",
+		kotlin = "https://maven.fabricmc.net/net/fabricmc/fabric-language-kotlin/maven-metadata.xml",
+		loom = "https://maven.fabricmc.net/net/fabricmc/fabric-loom/maven-metadata.xml",
 	}
 	local operation = { handles = {}, cancelled = false }
 	function operation.cancel()
@@ -103,19 +135,23 @@ function M.resolve(version, callback)
 		for _, handle in pairs(operation.handles) do handle:kill(15) end
 	end
 	local responses = {}
-	local remaining = 3
+	local optional_sources = { kotlin = true, loom = true }
+	local remaining = vim.tbl_count(urls)
 	local finished = false
 	local function complete(name, result)
 		if operation.cancelled or finished then return end
 		if result.code ~= 0 then
-			finished = true
-			callback(M.read(version), { code = "version_fetch_failed", source = name, detail = result.stderr })
-			return
+			if not optional_sources[name] then
+				finished = true
+				callback(M.read(version), { code = "version_fetch_failed", source = name, detail = result.stderr })
+				return
+			end
+		else
+			responses[name] = result.stdout
 		end
-		responses[name] = result.stdout
 		remaining = remaining - 1
 		if remaining > 0 then return end
-		local ok, data = pcall(M.parse_responses, responses.loader, responses.yarn, responses.api)
+		local ok, data = pcall(M.parse_responses, responses.loader, responses.yarn, responses.api, responses.kotlin, responses.loom)
 		if not ok then callback(M.read(version), { code = "version_response_invalid", detail = data }) return end
 		write_cache(version, data)
 		callback(data, nil)

@@ -25,8 +25,10 @@ M.default_config = {
 			generate_datagen = true,
 			use_mixins = false,
 			version_data = {
+				gradle_version = "9.6.1",
 				loom_version = "1.16-SNAPSHOT",
 				fabric_api = "0.146.0+",
+				kotlin_loader = "1.13.13+kotlin.2.4.10",
 				loader = "0.19.2",
 				yarn = nil,
 			},
