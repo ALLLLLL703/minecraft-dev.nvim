@@ -1,5 +1,6 @@
 local M = {}
 local evaluator = require("minecraft-dev.custom.evaluator")
+local property_values = require("minecraft-dev.custom.property_values")
 local notify = require("minecraft-dev.util.notify")
 
 local function flatten(descriptors, output)
@@ -67,6 +68,16 @@ local function ask_property(descriptor, properties, callback)
 		end)
 		return
 	end
+	if descriptor.type == "paper_versions" then
+		local operation, load_error = property_values.load(descriptor, function(values, err)
+			if not values then callback(err and err.code == "cancelled", err) return end
+			vim.ui.select(values, { prompt = prompt("property", descriptor.label or descriptor.name) }, function(value)
+				if value == nil then callback(true) else properties[descriptor.name] = value callback(false) end
+			end)
+		end)
+		if load_error then callback(false, load_error) end
+		return operation
+	end
 	if descriptor.type == "gradle_plugin" then
 		vim.ui.select({ true, false }, { prompt = prompt("property", descriptor.label or descriptor.name), format_item = tostring }, function(enabled)
 			if enabled == nil then callback(true) return end
@@ -95,13 +106,29 @@ end
 local function collect(descriptor, properties, callback)
 	local descriptors = {}
 	flatten(descriptor.properties, descriptors)
+	local operation = { status = "pending" }
+	local active
+	local function finish(values, cancelled, err)
+		if operation.status ~= "pending" then return end
+		operation.status = err and "failed" or cancelled and "cancelled" or "generated"
+		callback(values, cancelled, err)
+	end
 	local function next_property(index)
-		if index > #descriptors then callback(properties, false) return end
-		ask_property(descriptors[index], properties, function(cancelled)
-			if cancelled then callback(nil, true) else next_property(index + 1) end
+		if operation.status ~= "pending" then return end
+		if index > #descriptors then finish(properties, false) return end
+		active = ask_property(descriptors[index], properties, function(cancelled, err)
+			active = nil
+			if err and err.code ~= "cancelled" then finish(nil, false, err)
+			elseif cancelled then finish(nil, true)
+			else next_property(index + 1) end
 		end)
 	end
+	function operation.cancel()
+		if operation.status ~= "pending" then return end
+		if active and active.status == "pending" and active.cancel then active.cancel() else finish(nil, true) end
+	end
 	next_property(1)
+	return operation
 end
 
 local function generate(template, directory, properties, callback)
@@ -138,7 +165,9 @@ function M.run(callback)
 		if child and child.cancel then child.cancel() else finish({ status = "cancelled" }) end
 	end
 	local list_error
-	child, list_error = require("minecraft-dev").list_templates({
+	local previous_child = child
+	local list_child
+	list_child, list_error = require("minecraft-dev").list_templates({
 		provider = "builtin",
 		callback = function(templates, err)
 			if operation.status ~= "pending" then return end
@@ -157,16 +186,24 @@ function M.run(callback)
 						if operation.status ~= "pending" then return end
 						if name_cancelled then finish({ status = "cancelled" }); return end
 						local properties = { PROJECT_NAME = project_name, USE_GIT = false }
-						collect(template.definition, properties, function(values, cancelled)
+						local previous_child = child
+						local collection = collect(template.definition, properties, function(values, cancelled, collect_error)
 							if operation.status ~= "pending" then return end
 							if cancelled then finish({ status = "cancelled" }); return end
+							if collect_error then
+								notify.notify(vim.log.levels.ERROR, { "custom", "property_failed" }, vim.inspect(collect_error))
+								finish({ status = "failed", error = collect_error })
+								return
+							end
 							child = generate(template, directory, values, finish)
 						end)
+						if child == previous_child then child = collection end
 					end)
 				end)
 			end)
 		end,
 	})
+	if child == previous_child then child = list_child end
 	if list_error then finish({ status = "failed", error = list_error }) end
 	return operation
 end

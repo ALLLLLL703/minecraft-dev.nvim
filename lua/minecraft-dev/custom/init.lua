@@ -71,18 +71,30 @@ local function derive_value(property, properties)
 	if derivation.method == "recommendJavaVersionForMcVersion" then
 		local version = properties[(derivation.parents or {})[1]]
 		if type(version) == "table" then version = version.minecraftVersion or version.minecraft end
-		if evaluator.expression({ VERSION = version }, "$VERSION.compareTo($mcver.MC1_20_5) >= 0") then return 21 end
-		if evaluator.expression({ VERSION = version }, "$VERSION.compareTo($mcver.MC1_18) >= 0") then return 17 end
+		if type(version) ~= "string" or not version:match("^%d+%.%d+") then return derivation.default end
+		if evaluator.expression({ VERSION = version }, "$VERSION.compareTo($mcver.MC1_21_11) > 0") then return 25 end
+		if evaluator.expression({ VERSION = version }, "$VERSION.compareTo($mcver.MC1_20_4) > 0") then return 21 end
+		if evaluator.expression({ VERSION = version }, "$VERSION.compareTo($mcver.MC1_17_1) > 0") then return 17 end
+		if evaluator.expression({ VERSION = version }, "$VERSION.compareTo($mcver.MC1_16_5) > 0") then return 16 end
 		return 8
 	end
 	if derivation.method == "extractVersionMajorMinor" or derivation.method == "extractPaperApiVersion" then
 		local version = properties[(derivation.parents or {})[1]]
 		if type(version) == "table" then version = version.minecraftVersion or version.minecraft or version.version end
+		if derivation.method == "extractPaperApiVersion"
+			and evaluator.expression({ VERSION = version }, "$VERSION.compareTo($mcver.MC1_20_5) >= 0")
+		then
+			return tostring(version or "")
+		end
 		return tostring(version or ""):match("^(%d+%.%d+)")
 	end
 	if derivation.method == "fetchPaperDependencyVersionForMcVersion" then
 		local version = properties[(derivation.parents or {})[1]]
 		if type(version) == "table" then version = version.minecraftVersion or version.minecraft or version.version end
+		if evaluator.expression({ VERSION = version }, "$VERSION.compareTo($mcver.MC26_1) >= 0") then
+			local build_system = properties[(derivation.parents or {})[2]]
+			return build_system == "Maven" and "[" .. tostring(version) .. ".build,)" or tostring(version) .. ".build.+"
+		end
 		return tostring(version or "") .. "-R0.1-SNAPSHOT"
 	end
 	return derivation.default

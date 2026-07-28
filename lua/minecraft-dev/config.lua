@@ -72,6 +72,7 @@ M.default_config = {
 			generation_failed = "Failed to generate template: %s",
 			generated = "Generated Minecraft project at %s",
 			invalid_json = "Invalid JSON value for %s",
+			property_failed = "Failed to load template property: %s",
 		},
 		command = {
 			invalid_args = "Usage: GmcPro [platform build minecraft_version [path]]",

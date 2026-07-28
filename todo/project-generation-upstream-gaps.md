@@ -98,7 +98,7 @@
 
 本地缺失：
 
-- [ ] Paper Fill API 动态正式版本列表，最低版本策略和真实依赖版本派生。
+- [x] Paper Fill API 动态正式版本列表，最低版本策略和真实依赖版本派生。
 - [ ] Gradle version catalog。
 - [ ] `plugin.yml` 与 `paper-plugin.yml` 完整切换。
 - [ ] Paper bootstrap 类。

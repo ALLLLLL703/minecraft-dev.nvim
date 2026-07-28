@@ -8,6 +8,7 @@ local platforms = require("minecraft-dev.platforms")
 local project = require("minecraft-dev.project")
 local custom_templates = require("minecraft-dev.custom")
 local custom_evaluator = require("minecraft-dev.custom.evaluator")
+local custom_property_values = require("minecraft-dev.custom.property_values")
 local fabric_version_data = require("minecraft-dev.generators.fabric.version_data")
 local gradle = require("minecraft-dev.util.gradle")
 
@@ -463,6 +464,166 @@ final class Disabled {}
 	assert_equal(vim.fn.filereadable(destination .. "/optional.txt"), 1, "true file condition should generate file")
 	vim.fn.delete(template_root, "rf")
 	vim.fn.delete(destination, "rf")
+end
+
+local function test_custom_paper_version_values()
+	local response = vim.json.encode({
+		versions = {
+			legacy = { "1.18.1", "1.18.2" },
+			modern = { "1.21.11-pre1", "1.21.11", "26.1", "1.21.11" },
+		},
+	})
+	local versions, parse_error = custom_property_values.parse_paper_versions(response)
+	assert_equal(parse_error, nil, "valid Paper Fill responses should parse")
+	assert_equal(versions, { "26.1", "1.21.11", "1.18.2" }, "Paper versions should be stable, supported, unique, and newest first")
+	assert_equal(select(2, custom_property_values.parse_paper_versions("{}")), { code = "property_response_invalid", property_type = "paper_versions" }, "invalid Paper responses should be structured")
+
+	local captured_command
+	local resolved
+	local operation, load_error = custom_property_values.load({ type = "paper_versions" }, function(values, err)
+		resolved = { values = values, err = err }
+	end, function(command, _, callback)
+		captured_command = command
+		callback({ code = 0, stdout = response, stderr = "" })
+		return { kill = function() end }
+	end)
+	assert_equal(load_error, nil, "Paper version loading should start with an injected system runner")
+	vim.wait(1000, function() return resolved ~= nil end, 10)
+	assert_equal(operation.status, "generated", "Paper version loading should complete")
+	assert_equal(resolved.values, versions, "Paper version loading should return parsed versions")
+	assert_equal(resolved.err, nil, "Paper version loading should not return an error")
+	assert_truthy(table.concat(captured_command, " "):find("User-Agent: minecraft-dev.nvim", 1, true) ~= nil, "Paper Fill requests should identify the plugin")
+
+	local failed
+	local failed_operation = custom_property_values.load({ type = "paper_versions" }, function(values, err)
+		failed = { values = values, err = err }
+	end, function(_, _, callback)
+		callback({ code = 22, stdout = "", stderr = "HTTP 503" })
+		return { kill = function() end }
+	end)
+	vim.wait(1000, function() return failed ~= nil end, 10)
+	assert_equal(failed_operation.status, "failed", "Paper version HTTP failures should complete as failed")
+	assert_equal(failed.err.code, "property_fetch_failed", "Paper version HTTP failures should remain structured")
+
+	local process_callback
+	local killed = false
+	local cancelled
+	local cancelled_operation = custom_property_values.load({ type = "paper_versions" }, function(_, err)
+		cancelled = err
+	end, function(_, _, callback)
+		process_callback = callback
+		return { kill = function() killed = true end }
+	end)
+	cancelled_operation.cancel()
+	assert_equal(killed, true, "Paper version cancellation should terminate curl")
+	process_callback({ code = 143, stdout = "", stderr = "terminated" })
+	vim.wait(1000, function() return cancelled ~= nil end, 10)
+	assert_equal(cancelled_operation.status, "cancelled", "Paper version cancellation should complete after curl exits")
+	assert_equal(cancelled.code, "cancelled", "Paper version cancellation should remain structured")
+end
+
+local function test_custom_paper_version_wizard()
+	local minecraft_dev = require("minecraft-dev")
+	local wizard = require("minecraft-dev.custom.wizard")
+	local original_list_templates = minecraft_dev.list_templates
+	local original_generate_template = minecraft_dev.generate_template
+	local original_load = custom_property_values.load
+	local original_input = vim.ui.input
+	local original_select = vim.ui.select
+	local generated_properties
+	local inputs = { "/tmp/paper-wizard", "paper-wizard" }
+	local selections = {}
+	local pending_version_selection
+
+	minecraft_dev.list_templates = function(options)
+		options.callback({ {
+			label = "Paper",
+			group = "plugin",
+			descriptor = "bukkit/paper.mcdev.template.json",
+			definition = { properties = { { name = "MC_VERSION", type = "paper_versions" } } },
+		} }, nil)
+		return { status = "generated", cancel = function() end }
+	end
+	minecraft_dev.generate_template = function(options)
+		generated_properties = options.properties
+		local result = { status = "generated" }
+		options.callback(result)
+		return { status = "generated", result = result, cancel = function() end }
+	end
+	custom_property_values.load = function(_, callback)
+		callback({ "26.1", "1.21.11" }, nil)
+		return { status = "generated", cancel = function() end }, nil
+	end
+	vim.ui.input = function(_, callback) callback(table.remove(inputs, 1)) end
+	vim.ui.select = function(items, _, callback)
+		table.insert(selections, vim.deepcopy(items))
+		if type(items[1]) == "table" then callback(items[1])
+		elseif pending_version_selection == false then pending_version_selection = callback
+		else callback(items[2]) end
+	end
+
+	local operation = wizard.run()
+	inputs = { "/tmp/paper-wizard-cancel", "paper-wizard-cancel" }
+	pending_version_selection = false
+	local cancelling = wizard.run()
+	local picker_status = cancelling.status
+	cancelling.cancel()
+	local cancelled_status = cancelling.status
+	pending_version_selection("26.1")
+	local late_callback_status = cancelling.status
+	minecraft_dev.list_templates = original_list_templates
+	minecraft_dev.generate_template = original_generate_template
+	custom_property_values.load = original_load
+	vim.ui.input = original_input
+	vim.ui.select = original_select
+
+	assert_equal(operation.status, "generated", "Paper wizard should generate after selecting a fetched version: " .. vim.inspect(selections))
+	assert_equal(generated_properties.MC_VERSION, "1.21.11", "Paper wizard should pass the selected Fill version to generation")
+	assert_equal(picker_status, "pending", "Paper wizard should remain pending while the version picker is open")
+	assert_equal(cancelled_status, "cancelled", "Paper wizard cancellation should finish after version loading has completed")
+	assert_equal(late_callback_status, "cancelled", "late picker callbacks should not revive a cancelled Paper wizard")
+end
+
+local function test_custom_paper_derivations()
+	local template_root = vim.fn.tempname()
+	local template_fs = require("minecraft-dev.util.fs")
+	vim.fn.mkdir(template_root, "p")
+	template_fs.write_file(template_root .. "/values.ft", "${API_VERSION}|${DEPENDENCY_VERSION}|${JAVA_VERSION}\n")
+	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		properties = {
+			{ name = "MC_VERSION", type = "paper_versions" },
+			{ name = "BUILD_SYSTEM", type = "string" },
+			{ name = "API_VERSION", type = "semantic_version", derives = { parents = { "MC_VERSION" }, method = "extractPaperApiVersion" } },
+			{ name = "DEPENDENCY_VERSION", type = "string", derives = { parents = { "MC_VERSION", "BUILD_SYSTEM" }, method = "fetchPaperDependencyVersionForMcVersion" } },
+			{ name = "JAVA_VERSION", type = "integer", derives = { parents = { "MC_VERSION" }, method = "recommendJavaVersionForMcVersion", default = 17 } },
+		},
+		files = { { template = "values.ft", destination = "values.txt" } },
+	}))
+	local cases = {
+		{ version = "1.16.5", build = "Gradle", expected = "1.16|1.16.5-R0.1-SNAPSHOT|8" },
+		{ version = "1.17.1", build = "Gradle", expected = "1.17|1.17.1-R0.1-SNAPSHOT|16" },
+		{ version = "1.20.4", build = "Gradle", expected = "1.20|1.20.4-R0.1-SNAPSHOT|17" },
+		{ version = "1.20.5", build = "Gradle", expected = "1.20.5|1.20.5-R0.1-SNAPSHOT|21" },
+		{ version = "1.21.11", build = "Gradle", expected = "1.21.11|1.21.11-R0.1-SNAPSHOT|21" },
+		{ version = "26.1", build = "Gradle", expected = "26.1|26.1.build.+|25" },
+		{ version = "26.1", build = "Maven", expected = "26.1|[26.1.build,)|25" },
+	}
+	for _, case in ipairs(cases) do
+		local destination = vim.fn.tempname()
+		vim.fn.mkdir(destination, "p")
+		local result, err = generate_template({
+			provider = "local",
+			source = template_root,
+			directory = destination,
+			properties = { MC_VERSION = case.version, BUILD_SYSTEM = case.build },
+		})
+		assert_truthy(result ~= nil, "Paper derivation fixture should generate")
+		assert_equal(err, nil, "Paper derivation fixture should not fail")
+		assert_equal(read_file(destination .. "/values.txt"), case.expected, "Paper derivations should match upstream version boundaries")
+		vim.fn.delete(destination, "rf")
+	end
+	vim.fn.delete(template_root, "rf")
 end
 
 local function test_custom_template_discovery()
@@ -1543,6 +1704,9 @@ local function run()
 	test_platform_registry()
 	test_architectury_generation()
 	test_custom_v3_local_template()
+	test_custom_paper_version_values()
+	test_custom_paper_version_wizard()
+	test_custom_paper_derivations()
 	test_custom_template_discovery()
 	test_custom_velocity_directives()
 	test_custom_archive_provider()

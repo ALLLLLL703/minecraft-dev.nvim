@@ -119,3 +119,12 @@ require("minecraft-dev").generate({
 - 矩阵固定记录 JDK、Gradle/Maven、Minecraft、Loader/Loom 和语言组合，并复用用户级依赖缓存。
 - 结果写入 JSON，包含 Git 指纹、命令和耗时；timeout、network、dependency、tool、generation 与 build failure 分开报告。
 - 代表性矩阵覆盖 Paper、Velocity、Fabric Java/Kotlin、Forge、NeoForge 和 Architectury，以及 Maven/Gradle、Mixin/datagen。
+
+## 当前实现切片：P1.1 Paper 版本语义
+
+- 参考 `minecraft-dev/templates@40b091262cff4130b9f61bc25de6cb9e2439d745` 的 `bukkit/paper.mcdev.template.json`。
+- 参考 `minecraft-dev/MinecraftDev@6da60db01112200c2b4c73795bdf18db17aa2023` 的 `PaperVersionCreatorProperty`、`ExtractPaperApiVersionPropertyDerivation` 和 `FetchPaperDependencyVersionForMcVersion`。
+- `paper_versions` 通过 Paper Fill v3 API 异步加载，仅保留正式版本和 `1.18.2` 及以上版本，并按语义版本倒序交给 `vim.ui.select`；网络错误作为结构化向导失败返回，不降级为手输 JSON。
+- Paper API 版本在 1.20.5 前派生 major/minor，1.20.5 起保留完整 Minecraft 版本；26.1 起依赖坐标按 Gradle/Maven 分别使用 `.build.+` 与 `[.build,)`。
+- Java 版本派生与上游统一为 8/16/17/21/25，确保动态列表新增的 26.x 项目不会继续使用 Java 21。
+- 网络实现复用现有 `curl` 与 `vim.system` 异步边界，不增加 HTTP 或 XML 依赖。版本响应解析和派生规则使用确定性 fixture 测试，另执行真实 Fill API 选择器检查。
