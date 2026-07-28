@@ -585,6 +585,7 @@ local function test_custom_paper_build_option_wizard()
 					name = "INCLUDE_PLUGIN_LOADER", type = "boolean", default = false,
 					forceValue = { condition = "$GREMLIN_PLUGIN.enabled", value = "false" },
 				},
+				{ name = "IDEA_EXT_PLUGIN", type = "gradle_plugin", visible = false, parameters = plugin_parameters },
 			} },
 		} }, nil)
 		return { status = "generated", cancel = function() end }
@@ -616,18 +617,19 @@ local function test_custom_paper_build_option_wizard()
 	vim.ui.select = original_select
 
 	assert_equal(operation.status, "generated", "Paper build option wizard should generate")
-	assert_equal(loaded, { "KOTLIN_VERSION", "GREMLIN_PLUGIN", "SHADOW_PLUGIN" }, "Paper build options should load descriptor metadata without manual version input")
+	assert_equal(loaded, { "KOTLIN_VERSION", "GREMLIN_PLUGIN", "SHADOW_PLUGIN", "IDEA_EXT_PLUGIN" }, "build options should load visible and hidden descriptor metadata without manual version input")
 	assert_equal(generated_properties.KOTLIN_VERSION, "3.0.0", "Kotlin metadata version should be selected")
 	assert_equal(generated_properties.GREMLIN_PLUGIN, { enabled = true, version = "3.0.0" }, "Gremlin should retain its selected version")
 	assert_equal(generated_properties.SHADOW_PLUGIN, { enabled = true, version = "3.0.0" }, "Kotlin and Gremlin should force Shadow enabled while preserving version selection")
 	assert_equal(generated_properties.INCLUDE_PLUGIN_LOADER, false, "Gremlin should force the custom plugin loader off")
+	assert_equal(generated_properties.IDEA_EXT_PLUGIN, { enabled = false, version = "3.0.0" }, "hidden Gradle plugins should retain an automatically resolved version")
 
 	local template_root = vim.fn.tempname()
 	local destination = vim.fn.tempname()
 	local template_fs = require("minecraft-dev.util.fs")
 	vim.fn.mkdir(template_root, "p")
 	vim.fn.mkdir(destination, "p")
-	template_fs.write_file(template_root .. "/plugin.ft", [[${SHADOW_PLUGIN.enabled}|${SHADOW_PLUGIN.version}
+	template_fs.write_file(template_root .. "/plugin.ft", [[${SHADOW_PLUGIN.enabled}|${SHADOW_PLUGIN.version}|${USE_BUILD_CONSTANTS_TEMPLATING}
 #if ($AUTHORS)
 authors
 #end
@@ -639,6 +641,8 @@ load=$LOAD_AT
 		version = 3,
 		properties = {
 			{ name = "LANGUAGE", type = "string" },
+			{ name = "USE_ANNOTATION_PROCESSOR", type = "boolean", default = false },
+			{ name = "USE_BUILD_CONSTANTS_TEMPLATING", type = "boolean", default = "USE_ANNOTATION_PROCESSOR" },
 			{ name = "AUTHORS", type = "inline_string_list", default = "", nullIfDefault = true },
 			{ name = "LOAD_AT", type = "string", default = "POSTWORLD", nullIfDefault = true },
 			{
@@ -656,11 +660,64 @@ load=$LOAD_AT
 	})
 	assert_truthy(result ~= nil, "forced Gradle plugin fixture should generate")
 	assert_equal(err, nil, "forced Gradle plugin fixture should not fail")
-	assert_equal(read_file(destination .. "/plugin.txt"), "true|3.0.0", "forceValue should preserve the selected Gradle plugin version during generation")
+	assert_equal(read_file(destination .. "/plugin.txt"), "true|3.0.0|false", "forceValue and bare default references should render correctly")
+	assert_equal(result.properties.USE_BUILD_CONSTANTS_TEMPLATING, false, "bare defaults should reference an earlier property")
 	assert_equal(result.properties.AUTHORS, nil, "empty optional inline lists should normalize to nil")
 	assert_equal(result.properties.LOAD_AT, nil, "nullIfDefault should omit non-empty defaults from template values")
 	vim.fn.delete(template_root, "rf")
 	vim.fn.delete(destination, "rf")
+end
+
+local function test_custom_hidden_group_visibility()
+	local minecraft_dev = require("minecraft-dev")
+	local wizard = require("minecraft-dev.custom.wizard")
+	local original_list_templates = minecraft_dev.list_templates
+	local original_generate_template = minecraft_dev.generate_template
+	local original_load = custom_property_values.load
+	local original_input = vim.ui.input
+	local original_select = vim.ui.select
+	local inputs = { "/tmp/velocity-maven", "velocity-maven" }
+	local loaded = {}
+	minecraft_dev.list_templates = function(options)
+		options.callback({ {
+			label = "Velocity",
+			definition = { properties = {
+				{ name = "BUILD_SYSTEM", type = "string", options = { "Maven", "Gradle" } },
+				{
+					visible = { condition = "$BUILD_SYSTEM == 'Gradle'" },
+					groupProperties = { {
+						name = "IDEA_EXT_PLUGIN", type = "gradle_plugin", visible = false,
+						parameters = { sourceUrl = "https://repo.example/maven-metadata.xml" },
+					} },
+				},
+			} },
+		} }, nil)
+		return { status = "generated", cancel = function() end }
+	end
+	minecraft_dev.generate_template = function(options)
+		local result = { status = "generated" }
+		options.callback(result)
+		return { status = "generated", result = result, cancel = function() end }
+	end
+	custom_property_values.load = function(descriptor, callback)
+		table.insert(loaded, descriptor.name)
+		callback({ "1.0.0" }, nil)
+		return { status = "generated", cancel = function() end }, nil
+	end
+	vim.ui.input = function(_, callback) callback(table.remove(inputs, 1)) end
+	vim.ui.select = function(items, _, callback)
+		if type(items[1]) == "table" then callback(items[1]) else callback(items[1]) end
+	end
+
+	local operation = wizard.run()
+	minecraft_dev.list_templates = original_list_templates
+	minecraft_dev.generate_template = original_generate_template
+	custom_property_values.load = original_load
+	vim.ui.input = original_input
+	vim.ui.select = original_select
+
+	assert_equal(operation.status, "generated", "Maven custom wizard should generate")
+	assert_equal(loaded, {}, "properties in an invisible Gradle group should not load metadata for Maven")
 end
 
 local function test_custom_paper_version_wizard()
@@ -767,6 +824,38 @@ local function test_custom_paper_derivations()
 	vim.fn.delete(template_root, "rf")
 end
 
+local function test_custom_velocity_java_derivation()
+	local template_root = vim.fn.tempname()
+	local template_fs = require("minecraft-dev.util.fs")
+	vim.fn.mkdir(template_root, "p")
+	template_fs.write_file(template_root .. "/java.ft", "${JAVA_VERSION}\n")
+	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		properties = {
+			{ name = "VELOCITY_VERSION", type = "semantic_version" },
+			{
+				name = "JAVA_VERSION", type = "integer", default = 17,
+				derives = { parents = { "VELOCITY_VERSION" }, default = 8, select = {
+					{ condition = "$VELOCITY_VERSION.compareTo($semver.release(3, 5)) >= 0", value = 21 },
+					{ condition = "$VELOCITY_VERSION.compareTo($semver.release(3, 3)) >= 0", value = 17 },
+					{ condition = "$VELOCITY_VERSION.compareTo($semver.release(3)) >= 0", value = 11 },
+				} },
+			},
+		},
+		files = { { template = "java.ft", destination = "java.txt" } },
+	}))
+	for _, case in ipairs({ { version = "3.0.0", java = "11" }, { version = "3.3.0-SNAPSHOT", java = "17" }, { version = "3.5.0-SNAPSHOT", java = "21" } }) do
+		local destination = vim.fn.tempname()
+		vim.fn.mkdir(destination, "p")
+		local result, err = generate_template({ provider = "local", source = template_root, directory = destination, properties = { VELOCITY_VERSION = case.version } })
+		assert_truthy(result ~= nil, "Velocity Java derivation fixture should generate")
+		assert_equal(err, nil, "Velocity Java derivation should not fail")
+		assert_equal(read_file(destination .. "/java.txt"), case.java, "Velocity version should derive its required Java boundary")
+		vim.fn.delete(destination, "rf")
+	end
+	vim.fn.delete(template_root, "rf")
+end
+
 local function test_custom_template_discovery()
 	local root = vim.fn.tempname()
 	vim.fn.mkdir(root .. "/nested", "p")
@@ -798,6 +887,16 @@ wrong
 		custom_evaluator.render({ ENABLED = true, VERSION = "1.13.8+kotlin.2.2.21" }, 'plugin #if ($ENABLED)yes#else no#end ${VERSION.toString().split("kotlin.")[1]}'),
 		"plugin yes 2.2.21",
 		"inline conditions and chained string methods should render"
+	)
+	assert_equal(
+		custom_evaluator.render({ LANGUAGE = "Java", CATALOG = true }, [[#if ($LANGUAGE == 'Kotlin')
+kotlin version #if ($CATALOG) catalog #else literal #end
+#elseif ($LANGUAGE == 'Java')
+java
+#end
+]]),
+		"java\n",
+		"inline conditions should not consume surrounding block directives"
 	)
 	assert_equal(
 		custom_evaluator.render({ AUTHORS = { "Alice", "Bob" } }, '${AUTHORS.toString(", ", "[", "]")}|${AUTHORS.toStringQuoted()}|${version}|$description'),
@@ -1263,6 +1362,58 @@ local function test_additional_plugin_platforms()
 		end
 		vim.fn.delete(directory, "rf")
 	end
+end
+
+local function test_velocity_generation_modes()
+	local original_generate_gradlew = gradle.generate_gradlew
+	gradle.generate_gradlew = function() return true end
+	for _, case in ipairs({
+		{ build = "gradle", language = "java", marker = "JavaLanguageVersion.of(21)", source = "src/main/java/com/example/velocity/VelocityPlugin.java", annotation = true },
+		{ build = "maven", language = "java", marker = "<maven.compiler.release>21</maven.compiler.release>", source = "src/main/java/com/example/velocity/VelocityPlugin.java", annotation = true },
+		{ build = "gradle", language = "kotlin", marker = "jvmToolchain(21)", source = "src/main/kotlin/com/example/velocity/VelocityPlugin.kt", annotation = false },
+		{ build = "maven", language = "kotlin", marker = "<jvmTarget>21</jvmTarget>", source = "src/main/kotlin/com/example/velocity/VelocityPlugin.kt", annotation = false },
+		{ build = "gradle", language = "kotlin", marker = 'kapt("com.velocitypowered:velocity-api:3.5.0-SNAPSHOT")', source = "src/main/kotlin/com/example/velocity/VelocityPlugin.kt", annotation = true, use_annotation_processor = true },
+		{ build = "maven", language = "kotlin", marker = "<goal>kapt</goal>", source = "src/main/kotlin/com/example/velocity/VelocityPlugin.kt", annotation = true, use_annotation_processor = true },
+	}) do
+		local directory = vim.fn.tempname()
+		vim.fn.mkdir(directory, "p")
+		local ok, err = generate_project({
+			platform = "velocity", build_system = case.build, minecraft_version = "3.5.0-SNAPSHOT",
+			directory = directory, group_id = "com.example", artifact_id = "velocity-test",
+			package_name = "com.example.velocity", main_class = "VelocityPlugin", language = case.language,
+			plugin_version = "1.2.3", authors = { "Alice" }, use_annotation_processor = case.use_annotation_processor,
+		})
+		assert_equal(ok, true, "Velocity " .. case.language .. " " .. case.build .. " should generate")
+		assert_equal(err, nil, "Velocity generation should not fail")
+		local build = read_file(directory .. "/" .. (case.build == "gradle" and "build.gradle.kts" or "pom.xml"))
+		assert_truthy(build:find(case.marker, 1, true) ~= nil, "Velocity build should use its Java boundary")
+		local source = read_file(directory .. "/" .. case.source)
+		assert_equal(source:find("@Plugin", 1, true) ~= nil, case.annotation, "Velocity annotation mode should match the language")
+		if case.language == "kotlin" and case.annotation then
+			assert_truthy(source:find('authors = [ "Alice" ]', 1, true) ~= nil, "Kotlin Velocity annotations should use Kotlin array syntax")
+		end
+		assert_equal(vim.fn.filereadable(directory .. "/src/main/resources/velocity-plugin.json"), case.annotation and 0 or 1, "Velocity JSON metadata should complement annotation processing")
+		vim.fn.delete(directory, "rf")
+	end
+	for _, boundary in ipairs({ { version = "3.0.0", java = 11 }, { version = "3.3.0", java = 17 }, { version = "3.5.0", java = 21 } }) do
+		for _, build_system in ipairs({ "gradle", "maven" }) do
+			local directory = vim.fn.tempname()
+			vim.fn.mkdir(directory, "p")
+			local ok, err = generate_project({
+				platform = "velocity", build_system = build_system, minecraft_version = boundary.version,
+				directory = directory, group_id = "com.example", artifact_id = "velocity-boundary",
+				package_name = "com.example.velocity", main_class = "VelocityPlugin", language = "java",
+			})
+			assert_equal(ok, true, "Velocity Java boundary project should generate")
+			assert_equal(err, nil, "Velocity Java boundary generation should not fail")
+			local build = read_file(directory .. "/" .. (build_system == "gradle" and "build.gradle.kts" or "pom.xml"))
+			local marker = build_system == "gradle" and "JavaLanguageVersion.of(" .. boundary.java .. ")"
+				or "<maven.compiler.release>" .. boundary.java .. "</maven.compiler.release>"
+			assert_truthy(build:find(marker, 1, true) ~= nil, "native Velocity generation should derive each Java boundary")
+			vim.fn.delete(directory, "rf")
+		end
+	end
+	gradle.generate_gradlew = original_generate_gradlew
 end
 
 local function test_gradle_wrapper_generation_isolated_from_project()
@@ -1918,8 +2069,10 @@ local function run()
 	test_custom_v3_local_template()
 	test_custom_paper_version_values()
 	test_custom_paper_build_option_wizard()
+	test_custom_hidden_group_visibility()
 	test_custom_paper_version_wizard()
 	test_custom_paper_derivations()
+	test_custom_velocity_java_derivation()
 	test_custom_template_discovery()
 	test_custom_velocity_directives()
 	test_custom_archive_provider()
@@ -1931,6 +2084,7 @@ local function run()
 	test_fabric_online_version_parser()
 	test_forge_family_generation()
 	test_additional_plugin_platforms()
+	test_velocity_generation_modes()
 	test_gradle_wrapper_generation_isolated_from_project()
 	test_spigot_maven_generation()
 	test_spigot_calendar_generation()

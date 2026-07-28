@@ -109,11 +109,14 @@ local function collect_properties(descriptor, provided)
 	local properties = vim.deepcopy(provided or {})
 	local flattened = {}
 	flatten_properties(descriptor.properties, flattened)
+	local property_names = {}
+	for _, property in ipairs(flattened) do property_names[property.name] = true end
 	for _, property in ipairs(flattened) do
 		if properties[property.name] == nil and property.default ~= nil and not property.derives then
+			local default_reference = type(property.default) == "string" and property_names[property.default]
 			if property.options and type(property.default) == "number" then
 				properties[property.name] = property.options[property.default + 1]
-			elseif property.type ~= "jdk" and (type(property.default) ~= "string" or property.default:sub(1, 1) ~= "$") then
+			elseif not default_reference and property.type ~= "jdk" and (type(property.default) ~= "string" or property.default:sub(1, 1) ~= "$") then
 				properties[property.name] = property.default
 			end
 		end
@@ -134,6 +137,8 @@ local function collect_properties(descriptor, provided)
 		if properties[property.name] == nil then
 			if type(property.default) == "string" and property.default:sub(1, 1) == "$" then
 				properties[property.name] = evaluator.expression(properties, property.default)
+			elseif type(property.default) == "string" and property_names[property.default] then
+				properties[property.name] = properties[property.default]
 			elseif property.type == "jdk" and type(property.default) == "string" then
 				properties[property.name] = properties[property.default]
 			end

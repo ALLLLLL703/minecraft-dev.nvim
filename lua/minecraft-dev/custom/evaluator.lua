@@ -211,11 +211,11 @@ end
 local function render_inline(properties, content)
 	for _ = 1, 100 do
 		local with_else
-		content, with_else = content:gsub("#if%s*%(([^()\n]*)%)%s*([^\n]-)#else%s*([^\n]-)#end", function(condition, truthy, falsy)
+		content, with_else = content:gsub("#if%s*%(([^()\n]*)%)[ \t]*([^\n]-)#else[ \t]*([^\n]-)#end", function(condition, truthy, falsy)
 			return M.expression(properties, condition) and truthy or falsy
 		end)
 		local without_else
-		content, without_else = content:gsub("#if%s*%(([^()\n]*)%)%s*([^\n]-)#end", function(condition, truthy)
+		content, without_else = content:gsub("#if%s*%(([^()\n]*)%)[ \t]*([^\n]-)#end", function(condition, truthy)
 			return M.expression(properties, condition) and truthy or ""
 		end)
 		if with_else == 0 and without_else == 0 then break end

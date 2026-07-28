@@ -146,4 +146,13 @@ require("minecraft-dev").generate({
 - 构建矩阵按 case 选择 JDK，Spigot 26.1.2 的 Java/Kotlin × Gradle/Maven 四组合均真实构建通过；1.21.11 Kotlin Gradle 兼容分支也构建通过。报告为 `/tmp/minecraft-dev-spigot-p12.json`、`/tmp/minecraft-dev-spigot-p12-gradle-fixed.json` 和 `/tmp/minecraft-dev-spigot-p12-old-kotlin.json`。
 - 实际上游 Spigot descriptor 的 version catalog、Shadow 与 resource-factory 组合在 JDK 25 下构建通过，结果为 `/tmp/minecraft-dev-spigot-p12-descriptor.json`。
 - 集成矩阵支持 `MINECRAFT_DEV_MATRIX_NO_QUIT=1`，连接到现有 Neovim 时不再执行 `qa`/`cquit`。
+
+## 当前实现切片：P1.3 Velocity
+
+- 官方 Velocity descriptor 复用 custom engine 的 version catalog、Gradle plugin metadata、条件文件和 run metadata；补齐裸属性默认引用与隐藏 idea-ext 自动版本解析。
+- 行内 Velocity 条件只消费同一行的空格和制表符，避免内层 `#else` 错误截断外层块级条件。
+- Velocity 3.0/3.3/3.5 分别派生 Java 11/17/21，并通过 descriptor fixture 固定边界。
+- 原生 Java Velocity 默认使用 annotation processor；原生 Kotlin 默认使用显式 `velocity-plugin.json`，并允许显式启用 kapt/AP。Kotlin 注解数组使用 Kotlin 方括号语法，不复用 Java 花括号。
+- 原生 Gradle/Maven 的 Kotlin toolchain、Java release 和插件元数据共享 Velocity 版本规则；默认 Java/Kotlin × Gradle/Maven 四组合真实构建通过，报告为 `/tmp/minecraft-dev-velocity-p13-native.json`；Kotlin AP 的 Gradle/Maven 构建报告为 `/tmp/minecraft-dev-velocity-p13-kotlin-ap-fixed.json`。
+- 实际上游 descriptor 的 Java annotation processor + BuildConstants，以及 Kotlin resource-factory + Shadow/run-velocity/version catalog 组合在 JDK 21 下构建通过，报告为 `/tmp/minecraft-dev-velocity-p13-descriptor.json`。
 - 保留 `generators/bukkit/` 为内部共享层，不新增语义不明确、上游新模板未公开的通用 Bukkit 平台入口。

@@ -124,12 +124,12 @@
 
 上游证据：`templates:velocity/.mcdev.template.json`。
 
-- [ ] version catalog。
-- [ ] 可选 annotation processor 和 `velocity-plugin.json` 路径。
-- [ ] BuildConstants 模板生成。
-- [ ] run-velocity、Shadow、resource-factory、idea-ext 插件。
-- [ ] `runVelocity` 运行配置。
-- [ ] 按 Velocity 3.0/3.3/3.5 派生 Java 11/17/21。
+- [x] version catalog。
+- [x] 可选 annotation processor 和 `velocity-plugin.json` 路径。
+- [x] BuildConstants 模板生成。
+- [x] run-velocity、Shadow、resource-factory、idea-ext 插件。
+- [x] `runVelocity` 运行配置。
+- [x] 按 Velocity 3.0/3.3/3.5 派生 Java 11/17/21。
 
 验收：annotation processor 开关、resource-factory 开关和运行插件组合均可构建。
 

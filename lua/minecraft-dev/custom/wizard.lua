@@ -3,14 +3,32 @@ local evaluator = require("minecraft-dev.custom.evaluator")
 local property_values = require("minecraft-dev.custom.property_values")
 local notify = require("minecraft-dev.util.notify")
 
-local function flatten(descriptors, output)
+local function flatten(descriptors, output, inherited_visibility)
 	for _, descriptor in ipairs(descriptors or {}) do
-		if descriptor.groupProperties then flatten(descriptor.groupProperties, output)
-		elseif descriptor.name then table.insert(output, descriptor) end
+		if descriptor.groupProperties then
+			local visibility = vim.deepcopy(inherited_visibility or {})
+			if descriptor.visible ~= nil then table.insert(visibility, descriptor.visible) end
+			flatten(descriptor.groupProperties, output, visibility)
+		elseif descriptor.name then
+			local property = vim.deepcopy(descriptor)
+			property.group_visibility = vim.deepcopy(inherited_visibility or {})
+			table.insert(output, property)
+		end
 	end
 end
 
+local function groups_visible(descriptor, properties)
+	for _, group_visibility in ipairs(descriptor.group_visibility or {}) do
+		if group_visibility == false then return false end
+		if type(group_visibility) == "table" and group_visibility.condition
+			and not evaluator.expression(properties, group_visibility.condition)
+		then return false end
+	end
+	return true
+end
+
 local function visible(descriptor, properties)
+	if not groups_visible(descriptor, properties) then return false end
 	if descriptor.visible == false then return false end
 	if type(descriptor.visible) == "table" and descriptor.visible.condition then
 		return not not evaluator.expression(properties, descriptor.visible.condition)
@@ -77,7 +95,17 @@ local function ask_version_property(descriptor, properties, callback, on_child, 
 end
 
 local function ask_property(descriptor, properties, callback, on_child, is_pending)
-	if not visible(descriptor, properties) or descriptor.derives or descriptor.inheritFrom or descriptor.type == "jdk" then callback(false) return end
+	if descriptor.derives or descriptor.inheritFrom or descriptor.type == "jdk" then callback(false) return end
+	if not groups_visible(descriptor, properties) then callback(false) return end
+	if descriptor.visible == false and descriptor.type == "maven_artifact_version" then
+		return ask_version_property(descriptor, properties, callback, on_child, is_pending)
+	end
+	if descriptor.visible == false and descriptor.type == "gradle_plugin" then
+		return ask_version_property(descriptor, properties, callback, on_child, is_pending, function(version)
+			return { enabled = false, version = version }
+		end)
+	end
+	if not visible(descriptor, properties) then callback(false) return end
 	local has_forced_value, forced = forced_value(descriptor, properties)
 	if has_forced_value and descriptor.type ~= "gradle_plugin" then properties[descriptor.name] = forced callback(false) return end
 	if descriptor.type == "build_system_coordinates" then ask_coordinates(properties, callback) return end

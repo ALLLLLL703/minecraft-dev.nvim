@@ -53,6 +53,31 @@ M.cases = {
 		spec = project_spec({ platform = "velocity", build_system = "maven", minecraft_version = "3.5.0-SNAPSHOT", language = "java" }),
 	},
 	{
+		name = "velocity-java-gradle",
+		toolchain = { jdk = 21, gradle = "8.12.1" },
+		spec = project_spec({ platform = "velocity", build_system = "gradle", minecraft_version = "3.5.0-SNAPSHOT", language = "java" }),
+	},
+	{
+		name = "velocity-kotlin-gradle",
+		toolchain = { jdk = 21, gradle = "8.12.1", kotlin = "2.1.20" },
+		spec = project_spec({ platform = "velocity", build_system = "gradle", minecraft_version = "3.5.0-SNAPSHOT", language = "kotlin" }),
+	},
+	{
+		name = "velocity-kotlin-maven",
+		toolchain = { jdk = 21, maven = true, kotlin = "2.1.20" },
+		spec = project_spec({ platform = "velocity", build_system = "maven", minecraft_version = "3.5.0-SNAPSHOT", language = "kotlin" }),
+	},
+	{
+		name = "velocity-kotlin-ap-gradle",
+		toolchain = { jdk = 21, gradle = "8.12.1", kotlin = "2.1.20" },
+		spec = project_spec({ platform = "velocity", build_system = "gradle", minecraft_version = "3.5.0-SNAPSHOT", language = "kotlin", use_annotation_processor = true }),
+	},
+	{
+		name = "velocity-kotlin-ap-maven",
+		toolchain = { jdk = 21, maven = true, kotlin = "2.1.20" },
+		spec = project_spec({ platform = "velocity", build_system = "maven", minecraft_version = "3.5.0-SNAPSHOT", language = "kotlin", use_annotation_processor = true }),
+	},
+	{
 		name = "fabric-java-gradle",
 		toolchain = { jdk = 21, gradle = "8.12.1", loom = "1.10-SNAPSHOT" },
 		spec = project_spec({
