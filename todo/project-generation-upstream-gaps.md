@@ -50,9 +50,9 @@
 
 现状：`lua/minecraft-dev/generators/paper/gradle.lua` 把 `artifact_id` 写入 Gradle `version`，而不是 `plugin_version`。模板第二个 `%s` 明确对应项目版本。
 
-- [ ] Java/Kotlin、1.13 前后模板都使用 `plugin_version`。
-- [ ] 未提供 `plugin_version` 时使用稳定默认值 `1.0.0`。
-- [ ] 添加生成内容断言和真实 Gradle 构建测试。
+- [x] Java/Kotlin、1.13 前后模板都使用 `plugin_version`。
+- [x] 未提供 `plugin_version` 时使用稳定默认值 `1.0.0`。
+- [x] 添加生成内容断言和真实 Gradle 构建测试。
 
 验收：生成项目的 `group`、`archivesName`、`version` 三者语义正确且互不串位。
 

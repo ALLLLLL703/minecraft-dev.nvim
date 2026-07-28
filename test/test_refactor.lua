@@ -774,12 +774,66 @@ end
 
 local function test_paper_kotlin_templates()
 	local gradle_template = paper_templates.read("gradle", "v1_13_plus/build.gradle.kts", "kotlin")
+	local legacy_gradle_template = paper_templates.read("gradle", "1.13-/build.gradle", "kotlin")
 	local maven_template = paper_templates.read("maven", "v1_13_plus/pom.xml", "kotlin")
 	local main_template = paper_templates.read("gradle", "Main.kt", "kotlin")
 
 	assert_truthy(gradle_template:match('kotlin%("jvm"%)') ~= nil, "gradle kotlin template should apply Kotlin plugin")
+	assert_truthy(legacy_gradle_template:match("org%.jetbrains%.kotlin%.jvm") ~= nil, "legacy Gradle Kotlin template should apply Kotlin plugin")
 	assert_truthy(maven_template:match("kotlin%-maven%-plugin") ~= nil, "maven kotlin template should apply Kotlin plugin")
 	assert_truthy(main_template:match("class %%s : JavaPlugin%(%)") ~= nil, "kotlin main template should extend JavaPlugin")
+end
+
+local function test_paper_gradle_project_version()
+	local original_generate_gradlew = gradle.generate_gradlew
+	gradle.generate_gradlew = function() end
+	local cases = {
+		{ minecraft_version = "1.12.2", language = "java", build_file = "build.gradle" },
+		{ minecraft_version = "1.12.2", language = "kotlin", build_file = "build.gradle" },
+		{ minecraft_version = "1.21.8", language = "java", build_file = "build.gradle.kts" },
+		{ minecraft_version = "1.21.8", language = "kotlin", build_file = "build.gradle.kts" },
+	}
+	for _, case in ipairs(cases) do
+		local directory = vim.fn.tempname()
+		vim.fn.mkdir(directory, "p")
+		local ok, err = project.generate({
+			platform = "paper",
+			build_system = "gradle",
+			minecraft_version = case.minecraft_version,
+			directory = directory,
+			group_id = "com.example",
+			artifact_id = "paper-version-test",
+			package_name = "com.example.paper",
+			main_class = "PaperVersionTest",
+			language = case.language,
+			plugin_version = "2.3.4",
+		})
+		assert_equal(ok, true, "Paper Gradle generation should succeed")
+		assert_equal(err, nil, "Paper Gradle generation should not return an error")
+		local build = read_file(directory .. "/" .. case.build_file)
+		assert_truthy(build:find('group = "com.example"', 1, true) ~= nil, "Paper Gradle group should use group_id")
+		assert_truthy(build:find('version = "2.3.4"', 1, true) ~= nil, "Paper Gradle version should use plugin_version")
+		assert_truthy(build:find(case.minecraft_version .. "-R0.1-SNAPSHOT", 1, true) ~= nil, "Paper API dependency should use minecraft_version")
+		assert_truthy(read_file(directory .. "/settings.gradle"):find('rootProject.name = "paper-version-test"', 1, true) ~= nil, "Paper Gradle archive name should use artifact_id")
+		vim.fn.delete(directory, "rf")
+	end
+
+	local default_directory = vim.fn.tempname()
+	vim.fn.mkdir(default_directory, "p")
+	project.generate({
+		platform = "paper",
+		build_system = "gradle",
+		minecraft_version = "1.21.8",
+		directory = default_directory,
+		group_id = "com.example",
+		artifact_id = "paper-version-default",
+		package_name = "com.example.paper",
+		main_class = "PaperVersionDefault",
+		language = "java",
+	})
+	assert_truthy(read_file(default_directory .. "/build.gradle.kts"):find('version = "1.0.0"', 1, true) ~= nil, "Paper Gradle version should default to 1.0.0")
+	vim.fn.delete(default_directory, "rf")
+	gradle.generate_gradlew = original_generate_gradlew
 end
 
 local function test_fabric_metadata_mixins()
@@ -834,6 +888,7 @@ local function run()
 	test_fabric_metadata_client_only()
 	test_fabric_metadata_mixins()
 	test_paper_kotlin_templates()
+	test_paper_gradle_project_version()
 	print("test_refactor.lua: ok")
 end
 

@@ -68,9 +68,10 @@ function M.generate_higher(project_path, version, language, spec)
 
 	local build_gradle_template = templates.read("gradle", "v1_13_plus/build.gradle.kts", lang)
 	build_gradle_template = bukkit_platform.transform_gradle(build_gradle_template, spec and spec.platform or "paper", ctx.version)
+	local plugin_version = spec and spec.plugin_version or "1.0.0"
 	fs.write_file(
 		path_util.join(path, "build.gradle.kts"),
-		string.format(build_gradle_template, ctx.groupId, ctx.artifactId, ctx.version)
+		string.format(build_gradle_template, ctx.groupId, plugin_version, ctx.version)
 	)
 
 	local settings_gradle_template = templates.read("gradle", "v1_13_plus/settings.gradle")
@@ -106,9 +107,10 @@ function M.generate_lower(project_path, version, language, spec)
 
 	local build_gradle_template = templates.read("gradle", "1.13-/build.gradle", lang)
 	build_gradle_template = bukkit_platform.transform_gradle(build_gradle_template, spec and spec.platform or "paper", ctx.version)
+	local plugin_version = spec and spec.plugin_version or "1.0.0"
 	fs.write_file(
 		path_util.join(path, "build.gradle"),
-		string.format(build_gradle_template, ctx.groupId, ctx.artifactId, ctx.version)
+		string.format(build_gradle_template, ctx.groupId, plugin_version, ctx.version)
 	)
 
 	local settings_gradle_template = templates.read("gradle", "1.13-/settings.gradle")

@@ -5,6 +5,7 @@ local M = {}
 local LANGUAGE_SPECIFIC_FILES = {
 	["Main.java"] = true,
 	["Main.kt"] = true,
+	["build.gradle"] = true,
 	["build.gradle.kts"] = true,
 	["pom.xml"] = true,
 }

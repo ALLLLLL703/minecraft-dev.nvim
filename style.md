@@ -93,3 +93,9 @@ require("minecraft-dev").generate({
 - `FabricVersionData` 增加 Fabric Language Kotlin 版本；在线解析 Maven metadata，离线使用配置默认值。
 - Kotlin 编译器版本从 `fabric-language-kotlin` 的 `+kotlin.<version>` 后缀派生，避免维护第二个平行版本。
 - 通过公共 `project.generate()` 添加回归测试，并以 JDK 21 对 main/client/datagen/Mixin 全开项目执行真实 `gradlew build`。
+
+## 当前实现切片：P0.2 Paper Gradle 版本
+
+- Gradle `group` 使用 `group_id`，项目 `version` 使用 `plugin_version`，依赖版本继续使用 `minecraft_version`。
+- `settings.gradle` 的项目名使用 `artifact_id`，因此默认归档名不会与项目版本串位。
+- 未提供 `plugin_version` 时与插件元数据保持一致，使用 `1.0.0`。
