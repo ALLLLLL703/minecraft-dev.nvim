@@ -156,3 +156,16 @@ require("minecraft-dev").generate({
 - 原生 Gradle/Maven 的 Kotlin toolchain、Java release 和插件元数据共享 Velocity 版本规则；默认 Java/Kotlin × Gradle/Maven 四组合真实构建通过，报告为 `/tmp/minecraft-dev-velocity-p13-native.json`；Kotlin AP 的 Gradle/Maven 构建报告为 `/tmp/minecraft-dev-velocity-p13-kotlin-ap-fixed.json`。
 - 实际上游 descriptor 的 Java annotation processor + BuildConstants，以及 Kotlin resource-factory + Shadow/run-velocity/version catalog 组合在 JDK 21 下构建通过，报告为 `/tmp/minecraft-dev-velocity-p13-descriptor.json`。
 - 保留 `generators/bukkit/` 为内部共享层，不新增语义不明确、上游新模板未公开的通用 Bukkit 平台入口。
+
+## 当前实现切片：P1.4 BungeeCord、Waterfall、Sponge
+
+- 参考 `minecraft-dev/templates@40b091262cff4130b9f61bc25de6cb9e2439d745` 的 BungeeCord 与 Sponge descriptor/build templates，以及 `minecraft-dev/MinecraftDev@6da60db01112200c2b4c73795bdf18db17aa2023` 的 `bungee-platforms.kt`。
+- BungeeCord/Waterfall Java Gradle 输出 Groovy DSL，Kotlin 输出 Kotlin DSL；两种语言和 Maven 均以 Java 8 为目标。
+- Waterfall 将 Minecraft 版本与 API 版本分离：显式 `waterfall_version` 直接使用，否则异步读取官方 Maven metadata 并选择对应 Minecraft 版本族的最新 API 版本。
+- Sponge 按 API 8/9/10/11+ 派生 Java 16/17/17/21；Gradle 使用 SpongeGradle 生成插件元数据，Maven 保留静态 `META-INF/sponge_plugins.json`。
+- 快速回归通过公开 `generate()` 覆盖 DSL、版本坐标、Java 边界和元数据分支；集成矩阵覆盖三个平台各自 Java/Kotlin × Gradle/Maven。
+- 已检索 Lua/Neovim 项目生成依赖但未发现适合该仓库的维护型组件；版本读取复用现有 `vim.system` 和 Maven metadata 解析，不增加网络、XML 或构建 DSL 依赖。
+- metadata operation 提供 `on_complete` 生命周期，Waterfall 取消会等待 curl 退出后再清理 staging 和锁；命令入口与 Lua API 共用同一解析路径。
+- Kotlin Gradle/Maven 分别使用 Shadow/Shade 打包运行时；九个受影响组合回归构建通过，代表性产物均包含 `kotlin/Unit.class`。报告为 `/tmp/minecraft-dev-p14-kotlin-packaging.json`。
+- 三个平台的原生 Java/Kotlin × Gradle/Maven 十二组合构建通过，首轮报告为 `/tmp/minecraft-dev-p14-proxy-sponge.json`，修复项报告为 `/tmp/minecraft-dev-p14-proxy-fixed.json`。
+- 官方 BungeeCord/Sponge descriptor 八组合构建通过；wrapper finalizer 保留模板声明的 Gradle 8.8，结果记录于 `/tmp/minecraft-dev-p14-descriptors.json`、`/tmp/minecraft-dev-p14-descriptors-fixed2.json` 和 `/tmp/minecraft-dev-p14-sponge-descriptor-rerun.json`。

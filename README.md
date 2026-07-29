@@ -135,6 +135,12 @@ Paper and Spigot specifications also accept `plugin_name`, `plugin_version`, `de
 `prefix`, `load`, `load_before`, `depend`, and `soft_depend`. Set `paper_manifest = true` to generate the experimental
 `paper-plugin.yml` format and its structured server dependencies.
 
+Waterfall specifications accept a Minecraft version such as `1.21` or `1.21.1` and asynchronously resolve the newest
+matching Waterfall API version. Set `waterfall_version` to a complete artifact version to bypass online resolution.
+BungeeCord and Waterfall target Java 8; Kotlin projects shade the Kotlin runtime into the generated plugin JAR.
+Sponge derives Java 16/17/21 from API 8/9-10/11+, uses SpongeGradle metadata for Gradle, and writes
+`META-INF/sponge_plugins.json` for Maven.
+
 Forge and NeoForge use Gradle and require `loader_version`. They also accept `parchment_version`, `use_mixins`,
 `plugin_name`, `plugin_version`, `description`, and `license`.
 
@@ -207,16 +213,19 @@ nvim --headless --clean -u NONE \
   +qa
 ```
 
-Run the optional network-backed build matrix with JDK 21, Gradle, and Maven installed:
+Run the optional network-backed build matrix with JDK 17, 21, and 25, plus Gradle and Maven installed:
 
 ```bash
-MINECRAFT_DEV_JAVA_HOME=/path/to/jdk-21 \
+MINECRAFT_DEV_JAVA_17_HOME=/path/to/jdk-17 \
+MINECRAFT_DEV_JAVA_21_HOME=/path/to/jdk-21 \
+MINECRAFT_DEV_JAVA_25_HOME=/path/to/jdk-25 \
 nvim --headless --clean -u NONE \
   "+set rtp+=." \
   "+lua dofile('test/integration_build_matrix.lua')"
 ```
 
-The matrix covers Paper, Velocity, Fabric Java/Kotlin with Mixin and datagen, Forge, NeoForge, and Architectury. It
+The matrix covers Paper, Velocity, BungeeCord, Waterfall, Sponge, Fabric Java/Kotlin with Mixin and datagen, Forge,
+NeoForge, and Architectury. It
 reuses `~/.gradle` and `~/.m2/repository` by default and writes a JSON report to a temporary path. Use
 `MINECRAFT_DEV_MATRIX_CASES=paper-java-gradle,fabric-kotlin-gradle` to select cases,
 `MINECRAFT_DEV_MATRIX_TIMEOUT_MS` to change each build timeout, `MINECRAFT_DEV_MATRIX_REPORT` to choose the report,

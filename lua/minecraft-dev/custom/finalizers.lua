@@ -17,6 +17,14 @@ local function command_for(finalizer, project_root)
 		for _, task in ipairs(finalizer.tasks or {}) do
 			vim.list_extend(command, vim.split(task, "%s+", { trimempty = true }))
 		end
+		if vim.tbl_contains(command, "wrapper") and not vim.tbl_contains(command, "--gradle-version") then
+			local properties = vim.fs.joinpath(project_root, "gradle", "wrapper", "gradle-wrapper.properties")
+			if vim.fn.filereadable(properties) == 1 then
+				local content = table.concat(vim.fn.readfile(properties), "\n")
+				local version = content:match("gradle%-([%w%.+_-]+)%-%a+%.zip")
+				if version then vim.list_extend(command, { "--gradle-version", version }) end
+			end
+		end
 		return command
 	elseif finalizer.type == "git_add_all" then
 		return { "git", "add", "--all" }

@@ -78,6 +78,66 @@ M.cases = {
 		spec = project_spec({ platform = "velocity", build_system = "maven", minecraft_version = "3.5.0-SNAPSHOT", language = "kotlin", use_annotation_processor = true }),
 	},
 	{
+		name = "bungeecord-java-gradle",
+		toolchain = { jdk = 17, gradle = "8.12.1" },
+		spec = project_spec({ platform = "bungeecord", build_system = "gradle", minecraft_version = "1.21-R0.3", language = "java" }),
+	},
+	{
+		name = "bungeecord-kotlin-gradle",
+		toolchain = { jdk = 17, gradle = "8.12.1", kotlin = "2.1.20" },
+		spec = project_spec({ platform = "bungeecord", build_system = "gradle", minecraft_version = "1.21-R0.3", language = "kotlin" }),
+	},
+	{
+		name = "bungeecord-java-maven",
+		toolchain = { jdk = 17, maven = true },
+		spec = project_spec({ platform = "bungeecord", build_system = "maven", minecraft_version = "1.21-R0.3", language = "java" }),
+	},
+	{
+		name = "bungeecord-kotlin-maven",
+		toolchain = { jdk = 17, maven = true, kotlin = "2.1.20" },
+		spec = project_spec({ platform = "bungeecord", build_system = "maven", minecraft_version = "1.21-R0.3", language = "kotlin" }),
+	},
+	{
+		name = "waterfall-java-gradle",
+		toolchain = { jdk = 17, gradle = "8.12.1" },
+		spec = project_spec({ platform = "waterfall", build_system = "gradle", minecraft_version = "1.21", waterfall_version = "1.21-R0.5-SNAPSHOT", language = "java" }),
+	},
+	{
+		name = "waterfall-kotlin-gradle",
+		toolchain = { jdk = 17, gradle = "8.12.1", kotlin = "2.1.20" },
+		spec = project_spec({ platform = "waterfall", build_system = "gradle", minecraft_version = "1.21", waterfall_version = "1.21-R0.5-SNAPSHOT", language = "kotlin" }),
+	},
+	{
+		name = "waterfall-java-maven",
+		toolchain = { jdk = 17, maven = true },
+		spec = project_spec({ platform = "waterfall", build_system = "maven", minecraft_version = "1.21", waterfall_version = "1.21-R0.5-SNAPSHOT", language = "java" }),
+	},
+	{
+		name = "waterfall-kotlin-maven",
+		toolchain = { jdk = 17, maven = true, kotlin = "2.1.20" },
+		spec = project_spec({ platform = "waterfall", build_system = "maven", minecraft_version = "1.21", waterfall_version = "1.21-R0.5-SNAPSHOT", language = "kotlin" }),
+	},
+	{
+		name = "sponge-java-gradle",
+		toolchain = { jdk = 21, gradle = "8.12.1" },
+		spec = project_spec({ platform = "sponge", build_system = "gradle", minecraft_version = "11.0.0", language = "java", license = "MIT" }),
+	},
+	{
+		name = "sponge-kotlin-gradle",
+		toolchain = { jdk = 21, gradle = "8.12.1", kotlin = "2.1.20" },
+		spec = project_spec({ platform = "sponge", build_system = "gradle", minecraft_version = "11.0.0", language = "kotlin", license = "MIT" }),
+	},
+	{
+		name = "sponge-java-maven",
+		toolchain = { jdk = 21, maven = true },
+		spec = project_spec({ platform = "sponge", build_system = "maven", minecraft_version = "11.0.0", language = "java", license = "MIT" }),
+	},
+	{
+		name = "sponge-kotlin-maven",
+		toolchain = { jdk = 21, maven = true, kotlin = "2.1.20" },
+		spec = project_spec({ platform = "sponge", build_system = "maven", minecraft_version = "11.0.0", language = "kotlin", license = "MIT" }),
+	},
+	{
 		name = "fabric-java-gradle",
 		toolchain = { jdk = 21, gradle = "8.12.1", loom = "1.10-SNAPSHOT" },
 		spec = project_spec({

@@ -10,6 +10,7 @@ local custom_templates = require("minecraft-dev.custom")
 local custom_evaluator = require("minecraft-dev.custom.evaluator")
 local custom_property_values = require("minecraft-dev.custom.property_values")
 local fabric_version_data = require("minecraft-dev.generators.fabric.version_data")
+local plugin_version_data = require("minecraft-dev.generators.plugin.version_data")
 local gradle = require("minecraft-dev.util.gradle")
 local version = require("minecraft-dev.version")
 
@@ -55,6 +56,17 @@ local function test_command_entrypoints()
 	end
 	local originals = {}
 	local calls = {}
+	local minecraft_dev = require("minecraft-dev")
+	local project_context = require("minecraft-dev.context")
+	local original_generate = minecraft_dev.generate
+	local original_collect_context = project_context.collect
+	minecraft_dev.generate = function(spec)
+		calls[spec.platform] = { build = spec.build_system, path = spec.directory, version = spec.minecraft_version }
+		return { status = "generated" }
+	end
+	project_context.collect = function()
+		return { groupId = "com.example", artifactId = "command-test", package = "com.example.command", main = "CommandTest" }
+	end
 	for module in pairs(generator_modules) do
 		originals[module] = package.loaded[module] or false
 		package.loaded[module] = {
@@ -71,6 +83,8 @@ local function test_command_entrypoints()
 		assert_equal(calls[platform_name].build, build, platform_name .. " should dispatch its selected build")
 	end
 	for module, original in pairs(originals) do package.loaded[module] = original ~= false and original or nil end
+	minecraft_dev.generate = original_generate
+	project_context.collect = original_collect_context
 	local spigot_directory = vim.fn.tempname()
 	vim.fn.mkdir(spigot_directory, "p")
 	local original_input = vim.fn.input
@@ -209,11 +223,18 @@ local function test_command_platform_generation()
 	local original_collect = fabric_options.collect
 	local original_generate_gradlew = gradle.generate_gradlew
 	local original_input = vim.fn.input
+	local original_resolve_waterfall = plugin_version_data.resolve_waterfall_version
 	paper_options.with_language = function(_, callback) callback("java") end
 	fabric_options.collect = function(callback)
 		callback({ language = "java", side = "both", generate_datagen = true, use_mixins = true })
 	end
 	gradle.generate_gradlew = function() return true end
+	plugin_version_data.resolve_waterfall_version = function(_, callback)
+		callback("1.21-R0.5-SNAPSHOT", nil)
+		local operation = { status = "generated", result = { status = "generated" }, cancel = function() end }
+		function operation.on_complete(completion) completion(operation.result) return operation end
+		return operation, nil
+	end
 
 	local cases = {
 		{ platform = "paper", build = "maven", version = "1.21.1", file = "pom.xml", marker = "paper-api", metadata = "src/main/resources/plugin.yml" },
@@ -231,7 +252,11 @@ local function test_command_platform_generation()
 		vim.fn.input = function() return table.remove(input_values, 1) end
 		local result = command.dispatch(string.format("%s %s %s %s", case.platform, case.build, case.version, directory))
 		assert_equal(result.status, "started", case.platform .. " command generation should start")
+		if type(result.operation) == "table" and result.operation.status == "pending" then vim.wait(1000, function() return result.operation.status ~= "pending" end, 10) end
 		assert_truthy(read_file(directory .. "/" .. case.file):find(case.marker, 1, true) ~= nil, case.platform .. " command generation should use its platform dependency")
+		if case.platform == "waterfall" then
+			assert_truthy(read_file(directory .. "/pom.xml"):find("<version>1.21-R0.5-SNAPSHOT</version>", 1, true) ~= nil, "Waterfall command should resolve Minecraft versions to API versions")
+		end
 		if case.metadata then
 			assert_equal(vim.fn.filereadable(directory .. "/" .. case.metadata), 1, case.platform .. " command generation should write metadata")
 		end
@@ -241,6 +266,7 @@ local function test_command_platform_generation()
 	paper_options.with_language = original_with_language
 	fabric_options.collect = original_collect
 	gradle.generate_gradlew = original_generate_gradlew
+	plugin_version_data.resolve_waterfall_version = original_resolve_waterfall
 	vim.fn.input = original_input
 end
 
@@ -913,6 +939,11 @@ java
 	assert_equal(custom_evaluator.expression({}, '$LOAD_AT != "POSTWORLD"'), false, "missing values should not differ from ordinary defaults")
 	assert_equal(custom_evaluator.expression({}, "$VALUE != $null"), false, "missing values should equal explicit null")
 	assert_equal(custom_evaluator.expression({ VALUE = "set" }, "$VALUE != $null"), true, "present values should differ from explicit null")
+	assert_equal(
+		custom_evaluator.render({}, "#if (!$GRADLE_VERSION)\n#set ($GRADLE_VERSION = \"8.8\")\n#end\n${GRADLE_VERSION}\n"),
+		"8.8\n",
+		"set directives in selected conditions should update following template content"
+	)
 end
 
 local function test_custom_archive_provider()
@@ -1050,6 +1081,34 @@ local function test_custom_run_config_finalizers()
 	assert_equal(runs[2].args, { "package" }, "Maven run finalizer should persist goals")
 	assert_equal(imported_root, destination, "import finalizers should receive the committed destination")
 	vim.api.nvim_del_augroup_by_id(import_group)
+	vim.fn.delete(template_root, "rf")
+	vim.fn.delete(destination, "rf")
+end
+
+local function test_custom_wrapper_version_finalizer()
+	local template_root = vim.fn.tempname()
+	local destination = vim.fn.tempname()
+	vim.fn.mkdir(template_root, "p")
+	vim.fn.mkdir(destination, "p")
+	local template_fs = require("minecraft-dev.util.fs")
+	template_fs.write_file(template_root .. "/wrapper.ft", "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.8-bin.zip\n")
+	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
+		version = 3,
+		files = { { template = "wrapper.ft", destination = "gradle/wrapper/gradle-wrapper.properties" } },
+		finalizers = { { type = "run_gradle_tasks", tasks = { "wrapper" } } },
+	}))
+	local original_system = vim.system
+	local command
+	vim.system = function(args, _, callback)
+		command = args
+		callback({ code = 0, stdout = "", stderr = "" })
+		return { kill = function() end }
+	end
+	local result, err = generate_template({ provider = "local", source = template_root, directory = destination })
+	vim.system = original_system
+	assert_truthy(result ~= nil, "Gradle wrapper finalizer fixture should generate")
+	assert_equal(err, nil, "Gradle wrapper finalizer fixture should not fail")
+	assert_equal(command, { "gradle", "wrapper", "--gradle-version", "8.8" }, "wrapper finalizers should preserve the template Gradle version")
 	vim.fn.delete(template_root, "rf")
 	vim.fn.delete(destination, "rf")
 end
@@ -1331,10 +1390,15 @@ local function test_additional_plugin_platforms()
 	for platform, expectation in pairs(expectations) do
 		local directory = vim.fn.tempname()
 		vim.fn.mkdir(directory, "p")
+		local platform_version = platform == "velocity" and "3.5.0-SNAPSHOT"
+			or platform == "sponge" and "11.0.0"
+			or platform == "bungeecord" and "1.21-R0.3"
+			or "1.21"
 		local ok, err = generate_project({
 			platform = platform,
 			build_system = "maven",
-			minecraft_version = platform == "velocity" and "3.5.0-SNAPSHOT" or "1.21",
+			minecraft_version = platform_version,
+			waterfall_version = platform == "waterfall" and "1.21-R0.5-SNAPSHOT" or nil,
 			directory = directory,
 			group_id = "com.example",
 			artifact_id = "example",
@@ -1362,6 +1426,138 @@ local function test_additional_plugin_platforms()
 		end
 		vim.fn.delete(directory, "rf")
 	end
+end
+
+local function test_waterfall_version_resolution()
+	local metadata = [[<metadata><versioning><versions>
+<version>1.20-R0.3-SNAPSHOT</version>
+<version>1.21-R0.4-SNAPSHOT</version>
+<version>1.21-R0.5-SNAPSHOT</version>
+<version>26.1-R0.1-SNAPSHOT</version>
+</versions></versioning></metadata>]]
+	local selected
+	local operation, err = plugin_version_data.resolve_waterfall_version("1.21", function(value, resolve_error)
+		selected = { value = value, error = resolve_error }
+	end, function(command, _, callback)
+		assert_truthy(command[#command]:find("waterfall-api/maven-metadata.xml", 1, true) ~= nil, "Waterfall should load its API metadata")
+		callback({ code = 0, stdout = metadata, stderr = "" })
+		return { kill = function() end }
+	end)
+	assert_equal(err, nil, "Waterfall version resolution should start")
+	assert_truthy(vim.wait(1000, function() return selected ~= nil end, 10), "Waterfall version resolution should finish")
+	assert_equal(operation.status, "generated", "Waterfall version resolution should succeed")
+	assert_equal(selected, { value = "1.21-R0.5-SNAPSHOT" }, "Waterfall should select the newest matching API version")
+	local missing, missing_error = plugin_version_data.select_waterfall_version({ "1.21-R0.5-SNAPSHOT" }, "1.19")
+	assert_equal(missing, nil, "unknown Waterfall Minecraft versions should not be guessed")
+	assert_equal(missing_error.code, "waterfall_version_not_found", "unknown Waterfall versions should fail structurally")
+	assert_equal(plugin_version_data.select_waterfall_version({ "1.21-R0.5-SNAPSHOT" }, "1.21.1"), "1.21-R0.5-SNAPSHOT", "patch Minecraft versions should use their Waterfall major/minor family")
+	assert_equal(plugin_version_data.select_waterfall_version({ "1.15-SNAPSHOT" }, "1.15"), "1.15-SNAPSHOT", "legacy Waterfall versions without R identifiers should resolve")
+	assert_equal(plugin_version_data.select_waterfall_version({ "26.1-R0.1-SNAPSHOT" }, "26.1"), "26.1-R0.1-SNAPSHOT", "calendar Waterfall versions should retain their full family")
+	assert_equal(plugin_version_data.select_waterfall_version({ "26.1-R0.1-SNAPSHOT" }, "26.1.1"), "26.1-R0.1-SNAPSHOT", "calendar patch versions should use their Waterfall major/minor family")
+end
+
+local function test_waterfall_resolution_lifecycle()
+	local directory = vim.fn.tempname()
+	vim.fn.mkdir(directory, "p")
+	local original_system = vim.system
+	local process_callback
+	local killed = false
+	vim.system = function(_, _, callback)
+		process_callback = callback
+		return { kill = function() killed = true end }
+	end
+	local callback_count = 0
+	local operation = project.generate({
+		platform = "waterfall", build_system = "maven", minecraft_version = "1.21",
+		directory = directory, group_id = "com.example", artifact_id = "waterfall-cancel",
+		package_name = "com.example.waterfall", main_class = "WaterfallPlugin", language = "java",
+	}, function() callback_count = callback_count + 1 end)
+	vim.system = original_system
+	operation.cancel()
+	assert_equal(operation.status, "pending", "Waterfall cancellation should wait for the metadata process")
+	assert_equal(killed, true, "Waterfall cancellation should terminate metadata loading")
+	assert_equal(vim.fn.filereadable(directory .. ".minecraft-dev.lock"), 1, "Waterfall cancellation should retain the generation lock until curl exits")
+	process_callback({ code = 143, stdout = "", stderr = "cancelled" })
+	vim.wait(1000, function() return operation.status == "cancelled" end, 10)
+	assert_equal(operation.status, "cancelled", "Waterfall cancellation should finish after curl exits")
+	assert_equal(callback_count, 1, "Waterfall cancellation should callback once")
+	assert_equal(vim.fn.filereadable(directory .. ".minecraft-dev.lock"), 0, "Waterfall cancellation should release its lock after curl exits")
+
+	local original_resolve = plugin_version_data.resolve_waterfall_version
+	plugin_version_data.resolve_waterfall_version = function() return nil, { code = "curl_missing" } end
+	local failed = project.generate({
+		platform = "waterfall", build_system = "maven", minecraft_version = "1.21",
+		directory = directory, group_id = "com.example", artifact_id = "waterfall-failed",
+		package_name = "com.example.waterfall", main_class = "WaterfallPlugin", language = "java",
+	})
+	plugin_version_data.resolve_waterfall_version = original_resolve
+	assert_equal(failed.status, "failed", "Waterfall resolver startup failures should fail generation")
+	assert_equal(failed.result.error.detail.code, "curl_missing", "Waterfall resolver startup errors should retain their context")
+	vim.fn.delete(directory, "rf")
+end
+
+local function test_proxy_and_sponge_generation_modes()
+	local original_generate_gradlew = gradle.generate_gradlew
+	gradle.generate_gradlew = function() return true end
+	for _, platform in ipairs({ "bungeecord", "waterfall", "sponge" }) do
+		for _, language in ipairs({ "java", "kotlin" }) do
+			for _, build_system in ipairs({ "gradle", "maven" }) do
+				local directory = vim.fn.tempname()
+				vim.fn.mkdir(directory, "p")
+				local version_value = platform == "sponge" and "11.0.0"
+					or platform == "bungeecord" and "1.21-R0.3"
+					or "1.21"
+				local ok, generation_error = generate_project({
+					platform = platform, build_system = build_system, minecraft_version = version_value,
+					waterfall_version = platform == "waterfall" and "1.21-R0.5-SNAPSHOT" or nil,
+					directory = directory, group_id = "com.example", artifact_id = platform .. "-test",
+					package_name = "com.example.plugin", main_class = "ExamplePlugin", language = language,
+					plugin_version = "1.2.3", plugin_name = "Example", authors = { "Alice" }, license = "MIT",
+				})
+				assert_equal(ok, true, platform .. " " .. language .. " " .. build_system .. " should generate")
+				assert_equal(generation_error, nil, platform .. " generation should not fail")
+				local groovy = build_system == "gradle" and platform ~= "sponge" and language == "java"
+				local build_file = build_system == "maven" and "pom.xml" or groovy and "build.gradle" or "build.gradle.kts"
+				local build = read_file(directory .. "/" .. build_file)
+				if language == "kotlin" then
+					local packaging_marker = build_system == "maven" and "maven-shade-plugin" or "shadow"
+					assert_truthy(build:find(packaging_marker, 1, true) ~= nil, platform .. " Kotlin builds should package the Kotlin runtime")
+				end
+				if platform == "sponge" then
+					local java_marker = build_system == "maven"
+						and (language == "kotlin" and "<jvmTarget>21</jvmTarget>" or "<maven.compiler.release>21</maven.compiler.release>")
+						or "val javaTarget = 21"
+					assert_truthy(build:find(java_marker, 1, true) ~= nil, "Sponge should derive Java 21 for API 11")
+					assert_equal(vim.fn.filereadable(directory .. "/src/main/resources/META-INF/sponge_plugins.json"), build_system == "maven" and 1 or 0, "only Sponge Maven should write static metadata")
+				else
+					local java_marker = build_system == "maven"
+						and (language == "kotlin" and "<jvmTarget>1.8</jvmTarget>" or "<maven.compiler.release>8</maven.compiler.release>")
+						or language == "kotlin" and "jvmToolchain(8)" or "JavaVersion.VERSION_1_8"
+					assert_truthy(build:find(java_marker, 1, true) ~= nil, platform .. " should target Java 8")
+					if platform == "waterfall" then
+						local version_marker = build_system == "maven" and "<version>1.21-R0.5-SNAPSHOT</version>"
+							or "waterfall-api:1.21-R0.5-SNAPSHOT"
+						assert_truthy(build:find(version_marker, 1, true) ~= nil, "Waterfall should consume the selected API version")
+					end
+				end
+				vim.fn.delete(directory, "rf")
+			end
+		end
+	end
+	for _, boundary in ipairs({ { version = "8.2.0", java = 16 }, { version = "9.0.0", java = 17 }, { version = "10.0.0", java = 17 }, { version = "11.0.0", java = 21 } }) do
+		local directory = vim.fn.tempname()
+		vim.fn.mkdir(directory, "p")
+		local ok = generate_project({
+			platform = "sponge", build_system = "maven", minecraft_version = boundary.version,
+			directory = directory, group_id = "com.example", artifact_id = "sponge-boundary",
+			package_name = "com.example.sponge", main_class = "SpongePlugin", language = "java",
+		})
+		assert_equal(ok, true, "Sponge Java boundary project should generate")
+		local pom = read_file(directory .. "/pom.xml")
+		assert_truthy(pom:find("<maven.compiler.release>" .. boundary.java .. "</maven.compiler.release>", 1, true) ~= nil, "Sponge API should derive its Java boundary")
+		vim.fn.delete(directory, "rf")
+	end
+	gradle.generate_gradlew = original_generate_gradlew
 end
 
 local function test_velocity_generation_modes()
@@ -2079,11 +2275,15 @@ local function run()
 	test_custom_remote_provider()
 	test_custom_property_derivations()
 	test_custom_run_config_finalizers()
+	test_custom_wrapper_version_finalizer()
 	test_custom_finalizer_failure_cleanup()
 	test_custom_finalizer_cancellation()
 	test_fabric_online_version_parser()
 	test_forge_family_generation()
 	test_additional_plugin_platforms()
+	test_waterfall_version_resolution()
+	test_waterfall_resolution_lifecycle()
+	test_proxy_and_sponge_generation_modes()
 	test_velocity_generation_modes()
 	test_gradle_wrapper_generation_isolated_from_project()
 	test_spigot_maven_generation()

@@ -259,19 +259,26 @@ render_range = function(lines, index, properties, stops)
 		if directive and stops and stops[directive] then return table.concat(output), index, directive, argument end
 		if directive == "if" then
 			local selected = nil
+			local selected_properties
 			local matched = false
 			local condition = argument
 			index = index + 1
 			while true do
-				local branch, next_index, stop, stop_argument = render_range(lines, index, vim.deepcopy(properties), { ["elseif"] = true, ["else"] = true, ["end"] = true })
-				if not matched and M.expression(properties, condition) then selected, matched = branch, true end
+				local branch_properties = vim.deepcopy(properties)
+				local branch, next_index, stop, stop_argument = render_range(lines, index, branch_properties, { ["elseif"] = true, ["else"] = true, ["end"] = true })
+				if not matched and M.expression(properties, condition) then selected, selected_properties, matched = branch, branch_properties, true end
 				if stop == "elseif" then condition, index = stop_argument, next_index + 1
 				elseif stop == "else" then
-					local fallback, end_index = render_range(lines, next_index + 1, vim.deepcopy(properties), { ["end"] = true })
-					if not matched then selected = fallback end
+					local fallback_properties = vim.deepcopy(properties)
+					local fallback, end_index = render_range(lines, next_index + 1, fallback_properties, { ["end"] = true })
+					if not matched then selected, selected_properties = fallback, fallback_properties end
 					index = end_index + 1
 					break
 				else index = next_index + 1 break end
+			end
+			if selected_properties then
+				for name in pairs(properties) do properties[name] = nil end
+				for name, value in pairs(selected_properties) do properties[name] = value end
 			end
 			table.insert(output, selected or "")
 		elseif directive == "foreach" then

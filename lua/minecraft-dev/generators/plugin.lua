@@ -6,13 +6,13 @@ local path = require("minecraft-dev.util.path")
 
 local definitions = {
 	bungeecord = {
-		repository = "https://oss.sonatype.org/content/groups/public/",
+		repository = "https://libraries.minecraft.net/",
 		coordinate = "net.md-5:bungeecord-api:%s",
 		kind = "bungee",
 	},
 	waterfall = {
 		repository = "https://repo.papermc.io/repository/maven-public/",
-		coordinate = "io.github.waterfallmc:waterfall-api:%s-SNAPSHOT",
+		coordinate = "io.github.waterfallmc:waterfall-api:%s",
 		kind = "bungee",
 	},
 	velocity = {
@@ -44,6 +44,21 @@ local function velocity_java_version(version)
 	return 11
 end
 
+local function sponge_java_version(version)
+	local major = tonumber(tostring(version or ""):match("^(%d+)"))
+	if not major or major >= 11 then return 21 end
+	if major >= 9 then return 17 end
+	if major >= 8 then return 16 end
+	return 17
+end
+
+local function target_java_version(definition, version)
+	if definition.kind == "bungee" then return 8 end
+	if definition.kind == "sponge" then return sponge_java_version(version) end
+	if definition.kind == "velocity" then return velocity_java_version(version) end
+	return 21
+end
+
 local function uses_velocity_processor(spec, definition)
 	if definition.kind ~= "velocity" then return false end
 	if spec.language == "kotlin" then return spec.use_annotation_processor == true end
@@ -56,7 +71,8 @@ local function build_maven(ctx, spec, definition)
 	local kotlin = ""
 	local kotlin_dependency = ""
 	local source_directory = ""
-	local java_version = definition.kind == "velocity" and velocity_java_version(ctx.version) or 21
+	local java_version = target_java_version(definition, ctx.version)
+	local kotlin_jvm_target = java_version == 8 and "1.8" or tostring(java_version)
 	if spec.language == "kotlin" then
 		source_directory = "\n    <sourceDirectory>src/main/kotlin</sourceDirectory>"
 		local kapt = ""
@@ -75,8 +91,12 @@ local function build_maven(ctx, spec, definition)
         <artifactId>kotlin-maven-plugin</artifactId>
         <version>2.1.20</version>
 		<executions>%s<execution><goals><goal>compile</goal></goals></execution></executions>
-		<configuration><jvmTarget>%d</jvmTarget></configuration>
-      </plugin>]], kapt, java_version)
+		<configuration><jvmTarget>%s</jvmTarget></configuration>
+	  </plugin>
+	  <plugin>
+		<groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.5.3</version>
+		<executions><execution><phase>package</phase><goals><goal>shade</goal></goals></execution></executions>
+	  </plugin>]], kapt, kotlin_jvm_target)
 		kotlin_dependency = [[
 		<dependency><groupId>org.jetbrains.kotlin</groupId><artifactId>kotlin-stdlib-jdk8</artifactId><version>2.1.20</version></dependency>]]
 	end
@@ -105,12 +125,14 @@ end
 
 local function build_gradle(ctx, spec, definition)
 	local coordinate = string.format(definition.coordinate, ctx.version)
-	local java_version = definition.kind == "velocity" and velocity_java_version(ctx.version) or 21
+	local java_version = target_java_version(definition, ctx.version)
 	local processor_enabled = uses_velocity_processor(spec, definition)
-	local plugins = spec.language == "kotlin" and '    kotlin("jvm") version "2.1.20"' or '    java'
+	local plugins = spec.language == "kotlin"
+		and '    kotlin("jvm") version "2.1.20"\n    id("com.gradleup.shadow") version "8.3.5"'
+		or "    java"
 	if spec.language == "kotlin" and processor_enabled then plugins = plugins .. '\n    kotlin("kapt") version "2.1.20"' end
 	local processor = processor_enabled and '\n    ' .. (spec.language == "kotlin" and "kapt" or "annotationProcessor") .. '("' .. coordinate .. '")' or ""
-	local toolchain = spec.language == "kotlin" and "kotlin { jvmToolchain(" .. java_version .. ") }"
+	local toolchain = spec.language == "kotlin" and "kotlin { jvmToolchain(" .. java_version .. ") }\ntasks.build { dependsOn(\"shadowJar\") }"
 		or "java { toolchain.languageVersion.set(JavaLanguageVersion.of(" .. java_version .. ")) }"
 	return string.format([[plugins {
 %s
@@ -121,6 +143,70 @@ repositories { mavenCentral(); maven { url = uri(%s) } }
 dependencies { compileOnly(%s)%s }
 %s
 ]], plugins, quote(ctx.groupId), quote(spec.plugin_version or "1.0.0"), quote(definition.repository), quote(coordinate), processor, toolchain)
+end
+
+local function build_bungee_groovy(ctx, spec, definition)
+	local coordinate = string.format(definition.coordinate, ctx.version)
+	return string.format([[plugins { id 'java' }
+group = %s
+version = %s
+repositories { mavenCentral(); maven { url = %s } }
+dependencies { compileOnly %s }
+java {
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release.set(8)
+}
+]], quote(ctx.groupId), quote(spec.plugin_version or "1.0.0"), quote(definition.repository), quote(coordinate))
+end
+
+local function build_sponge_gradle(ctx, spec)
+	local java_version = sponge_java_version(ctx.version)
+	local kotlin = spec.language == "kotlin"
+	local plugins = kotlin and '    kotlin("jvm") version "2.1.20"\n    id("com.github.johnrengelman.shadow") version "8.1.1"'
+		or "    `java-library`"
+	local dependencies = kotlin and 'dependencies { implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8") }\n' or ""
+	local contributors = {}
+	for _, author in ipairs(spec.authors or {}) do
+		table.insert(contributors, string.format("        contributor(%s) { description(%s) }", quote(author), quote("Author")))
+	end
+	local links = spec.website and spec.website ~= "" and "        homepage(" .. quote(spec.website) .. ")" or ""
+	local toolchain = kotlin and "kotlin { jvmToolchain(javaTarget) }\ntasks.build { dependsOn(\"shadowJar\") }"
+		or "java { toolchain.languageVersion.set(JavaLanguageVersion.of(javaTarget)) }\ntasks.withType<JavaCompile>().configureEach { options.release.set(javaTarget) }"
+	return string.format([[import org.spongepowered.gradle.plugin.config.PluginLoaders
+import org.spongepowered.plugin.metadata.model.PluginDependency
+
+plugins {
+%s
+    id("org.spongepowered.gradle.plugin") version "2.3.0"
+}
+group = %s
+version = %s
+repositories { mavenCentral(); maven("https://repo.spongepowered.org/maven/") }
+%ssponge {
+    apiVersion(%s)
+    license(%s)
+    loader { name(PluginLoaders.JAVA_PLAIN); version("1.0") }
+    plugin(%s) {
+        displayName(%s)
+        entrypoint(%s)
+        description(%s)
+        links {
+%s
+        }
+%s
+        dependency("spongeapi") { loadOrder(PluginDependency.LoadOrder.AFTER); optional(false) }
+    }
+}
+val javaTarget = %d
+%s
+]], plugins, quote(ctx.groupId), quote(spec.plugin_version or "1.0.0"), dependencies,
+		quote(ctx.version), quote(spec.license or "All-Rights-Reserved"), quote(spec.plugin_id or ctx.artifactId),
+		quote(spec.plugin_name or ctx.artifactId), quote(ctx.package .. "." .. ctx.main),
+		quote(spec.description or "My plugin description"), links, table.concat(contributors, "\n"), java_version, toolchain)
 end
 
 local function bungee_manifest(ctx, spec)
@@ -194,8 +280,11 @@ local function sponge_metadata(ctx, spec)
 			name = spec.plugin_name or ctx.artifactId,
 			version = spec.plugin_version or "1.0.0",
 			entrypoint = ctx.package .. "." .. ctx.main,
-			description = spec.description or "",
+			description = spec.description or "My plugin description",
+			branding = {},
+			links = spec.website and spec.website ~= "" and { homepage = spec.website } or {},
 			contributors = contributors,
+			dependencies = { { id = "spongeapi", version = ctx.version, ["load-order"] = "after", optional = false } },
 		} },
 	}) .. "\n"
 end
@@ -213,7 +302,7 @@ function M.run(build_system, project_path, platform_version, spec, platform_name
 	end
 	local ctx = context.collect(spec)
 	ctx.path = project_path or vim.fn.getcwd()
-	ctx.version = platform_version
+	ctx.version = platform == "waterfall" and (spec.waterfall_version or platform_version) or platform_version
 	ctx.package_path = ctx.package:gsub("%.", "/")
 	local language_dir = spec.language == "kotlin" and "kotlin" or "java"
 	local extension = spec.language == "kotlin" and ".kt" or ".java"
@@ -224,15 +313,19 @@ function M.run(build_system, project_path, platform_version, spec, platform_name
 	if build_system == "maven" then
 		fs.write_file(path.join(ctx.path, "pom.xml"), build_maven(ctx, spec, definition))
 	else
-		fs.write_file(path.join(ctx.path, "build.gradle.kts"), build_gradle(ctx, spec, definition))
-		fs.write_file(path.join(ctx.path, "settings.gradle.kts"), "rootProject.name = " .. quote(ctx.artifactId) .. "\n")
+		local groovy_bungee = definition.kind == "bungee" and spec.language == "java"
+		local build = definition.kind == "sponge" and build_sponge_gradle(ctx, spec)
+			or groovy_bungee and build_bungee_groovy(ctx, spec, definition)
+			or build_gradle(ctx, spec, definition)
+		fs.write_file(path.join(ctx.path, groovy_bungee and "build.gradle" or "build.gradle.kts"), build)
+		fs.write_file(path.join(ctx.path, groovy_bungee and "settings.gradle" or "settings.gradle.kts"), "rootProject.name = " .. quote(ctx.artifactId) .. "\n")
 		operation = gradle.generate_gradlew(ctx.path)
 	end
 	if definition.kind == "bungee" then
 		local resources = path.join(ctx.path, "src/main/resources")
 		fs.mkdir(resources)
 		fs.write_file(path.join(resources, "bungee.yml"), bungee_manifest(ctx, spec))
-	elseif definition.kind == "sponge" then
+	elseif definition.kind == "sponge" and build_system == "maven" then
 		local resources = path.join(ctx.path, "src/main/resources/META-INF")
 		fs.mkdir(resources)
 		fs.write_file(path.join(resources, "sponge_plugins.json"), sponge_metadata(ctx, spec))

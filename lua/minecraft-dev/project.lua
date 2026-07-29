@@ -75,6 +75,9 @@ function M.validate(spec)
 			return nil, validation_error("invalid_version", "kotlin_loader_version")
 		end
 	end
+	if spec.waterfall_version ~= nil and (type(spec.waterfall_version) ~= "string" or spec.waterfall_version == "") then
+		return nil, validation_error("invalid_version", "waterfall_version")
+	end
 	if spec.platform == "forge" or spec.platform == "neoforge" then
 		if spec.language ~= "java" then
 			return nil, validation_error("unsupported_language", "language")
@@ -280,6 +283,25 @@ function M.generate_async(spec, callback)
 		end)
 		if not started then
 			finish({ status = "failed", error = { code = "version_resolution_failed", detail = fetch_operation } })
+			return operation
+		end
+		if operation.status == "pending" and not child then child = fetch_operation end
+	elseif normalized.platform == "waterfall" and not normalized.waterfall_version then
+		local started, fetch_operation, fetch_error = pcall(
+			require("minecraft-dev.generators.plugin.version_data").resolve_waterfall_version,
+			normalized.minecraft_version,
+			function(version, fetch_error)
+				if not version then
+					if fetch_error and fetch_error.code == "cancelled" then finish({ status = "cancelled" })
+					else finish({ status = "failed", error = { code = "version_resolution_failed", detail = fetch_error } }) end
+					return
+				end
+				normalized.waterfall_version = version
+				run_generator()
+			end
+		)
+		if not started or not fetch_operation then
+			finish({ status = "failed", error = { code = "version_resolution_failed", detail = started and fetch_error or fetch_operation } })
 			return operation
 		end
 		if operation.status == "pending" and not child then child = fetch_operation end

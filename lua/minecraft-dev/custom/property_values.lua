@@ -111,7 +111,17 @@ function M.load(descriptor, callback, system)
 		return nil, { code = "property_source_invalid", property_type = descriptor.type }
 	end
 
-	local operation = { status = "pending" }
+	local operation = { status = "pending", callbacks = {} }
+	function operation.on_complete(completion_callback)
+		if operation.result then completion_callback(operation.result) else table.insert(operation.callbacks, completion_callback) end
+		return operation
+	end
+	local function complete(status, err)
+		operation.status = status
+		operation.result = { status = status, error = err }
+		for _, completion_callback in ipairs(operation.callbacks) do completion_callback(operation.result) end
+		operation.callbacks = {}
+	end
 	local run_system = system or vim.system
 	local command = {
 		"curl", "--fail", "--silent", "--show-error", "--max-time", "10",
@@ -120,13 +130,15 @@ function M.load(descriptor, callback, system)
 	local ok, handle = pcall(run_system, command, { text = true }, vim.schedule_wrap(function(result)
 		if operation.status ~= "pending" then return end
 		if operation.cancel_requested then
-			operation.status = "cancelled"
-			callback(nil, { code = "cancelled" })
+			local err = { code = "cancelled" }
+			complete("cancelled", err)
+			callback(nil, err)
 			return
 		end
 		if result.code ~= 0 then
-			operation.status = "failed"
-			callback(nil, { code = "property_fetch_failed", property_type = descriptor.type, detail = result.stderr })
+			local err = { code = "property_fetch_failed", property_type = descriptor.type, detail = result.stderr }
+			complete("failed", err)
+			callback(nil, err)
 			return
 		end
 		local parsed, values, parse_error = pcall(function()
@@ -134,11 +146,12 @@ function M.load(descriptor, callback, system)
 			return M.parse_maven_versions(result.stdout, descriptor.limit)
 		end)
 		if not parsed then
-			operation.status = "failed"
-			callback(nil, { code = "property_response_invalid", property_type = descriptor.type, detail = values })
+			local err = { code = "property_response_invalid", property_type = descriptor.type, detail = values }
+			complete("failed", err)
+			callback(nil, err)
 			return
 		end
-		operation.status = values and "generated" or "failed"
+		complete(values and "generated" or "failed", parse_error)
 		callback(values, parse_error)
 	end))
 	if not ok then return nil, { code = "property_fetch_failed", property_type = descriptor.type, detail = tostring(handle) } end

@@ -137,11 +137,11 @@
 
 上游证据：`templates:bungeecord/.mcdev.template.json`、`templates:sponge/.mcdev.template.json` 和旧式 Waterfall creator。
 
-- [ ] Bungee Java 使用 Groovy Gradle、Kotlin 使用 Kotlin DSL 的上游行为。
-- [ ] Bungee 默认 Java 8，不再统一硬编码 Java 21。
-- [ ] Waterfall 使用真实平台版本选择器，避免把 Minecraft 版本当 API 版本。
-- [ ] Sponge 按 API 8/9/10/11+ 派生 Java 16/17/17/21。
-- [ ] Sponge Gradle 与 Maven 元数据生成策略分别对齐上游。
+- [x] Bungee Java 使用 Groovy Gradle、Kotlin 使用 Kotlin DSL 的上游行为。
+- [x] Bungee 默认 Java 8，不再统一硬编码 Java 21。
+- [x] Waterfall 使用真实平台版本选择器，避免把 Minecraft 版本当 API 版本。
+- [x] Sponge 按 API 8/9/10/11+ 派生 Java 16/17/17/21。
+- [x] Sponge Gradle 与 Maven 元数据生成策略分别对齐上游。
 
 验收：每个平台至少覆盖 Java/Kotlin 与 Gradle/Maven 四种组合。
 

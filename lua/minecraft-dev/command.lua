@@ -39,6 +39,22 @@ function M.dispatch(args)
 		notify.notify(vim.log.levels.ERROR, { "command", "unsupported_build" }, tostring(parsed_args.build_tool))
 		return { status = "failed", error = { code = "unsupported_build" } }
 	end
+	if parsed_args.project == "waterfall" then
+		local collected = require("minecraft-dev.context").collect()
+		local operation = require("minecraft-dev").generate({
+			platform = "waterfall",
+			build_system = parsed_args.build_tool,
+			minecraft_version = parsed_args.version,
+			directory = path,
+			group_id = collected.groupId,
+			artifact_id = collected.artifactId,
+			package_name = collected.package,
+			main_class = collected.main,
+			language = "java",
+			plugin_version = "1.0.0",
+		})
+		return { status = "started", operation = operation }
+	end
 
 	local ok, operation = pcall(
 		require(platform.generator).run,
