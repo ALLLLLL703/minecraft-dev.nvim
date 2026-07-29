@@ -2,8 +2,8 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
-    kotlin("jvm") version "%s"
-    id("fabric-loom") version "%s"
+    kotlin("jvm") version "__KOTLIN_VERSION__"
+    id("__LOOM_PLUGIN__") version "__LOOM_VERSION__"
     id("maven-publish")
 }
 
@@ -16,28 +16,15 @@ base {
     archivesName.set(project.property("archives_base_name") as String)
 }
 
-val targetJavaVersion = 21
+val targetJavaVersion = __JAVA_VERSION__
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
     withSourcesJar()
 }
 
-loom {
-    splitEnvironmentSourceSets()
+__LOOM_BLOCK__
 
-    mods {
-        register(project.property("archives_base_name") as String) {
-            sourceSet("main")
-            sourceSet("client")
-        }
-    }
-}
-
-fabricApi {
-    configureDataGeneration {
-        client = true
-    }
-}
+__DATAGEN_BLOCK__
 
 repositories {
     mavenCentral()
@@ -45,10 +32,10 @@ repositories {
 
 dependencies {
     minecraft("com.mojang:minecraft:$minecraftVersion")
-    mappings(loom.officialMojangMappings())
-    modImplementation("net.fabricmc:fabric-loader:$loaderVersion")
-    modImplementation("net.fabricmc:fabric-language-kotlin:%s")
-    modImplementation("net.fabricmc.fabric-api:fabric-api:${project.property("fabric_api_version")}")
+__MAPPINGS_DEPENDENCY__
+    __LOADER_CONFIGURATION__("net.fabricmc:fabric-loader:$loaderVersion")
+    __LOADER_CONFIGURATION__("net.fabricmc:fabric-language-kotlin:__KOTLIN_LOADER_VERSION__")
+__FABRIC_API_DEPENDENCY__
 }
 
 tasks.processResources {

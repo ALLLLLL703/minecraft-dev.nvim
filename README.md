@@ -63,8 +63,13 @@ require("minecraft-dev").setup({
 		fabric = {
 			version = "1.21.11",
 			side = "both",
+			use_official_mappings = true,
+			use_fabric_api = true,
+			split_sources = true,
 			generate_datagen = true,
 			use_mixins = false,
+			client_mixins = true,
+			cache_ttl = 24 * 60 * 60,
 			version_data = {
 				gradle_version = "9.6.1",
 				kotlin_loader = "1.13.13+kotlin.2.4.10",
@@ -83,15 +88,19 @@ MinecraftDevNew
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
 MinecraftDev template repository. Forge, NeoForge, and Architectury require this wizard because their complete version
-sets do not fit the positional command. Complex version properties are entered as JSON objects; prompts and messages
-remain configurable through `setup()`. Cancelling a wizard selection aborts generation without creating a project.
+sets do not fit the positional command. Fabric's composite versions use dedicated selectors rather than a JSON prompt;
+other unsupported composite property types still use JSON input. Prompts and messages remain configurable through
+`setup()`. Cancelling a wizard selection aborts generation without creating a project.
 
 When generating a Fabric project, the plugin now asks for:
 
 - language: `java` or `kotlin`
 - environment side: `client`, `server`, or `both`
-- whether to generate datagen entrypoints
-- whether to generate a mixin config and example mixin class
+- Yarn or official Mojang mappings (26.1+ always uses the new Loom mapping behavior)
+- whether to include Fabric API
+- whether Minecraft 1.18+ projects split client sources
+- whether to generate datagen entrypoints; this is disabled without Fabric API
+- whether to generate main and separate client Mixin configs and example classes
 
 If you cancel a selection with `Esc`, the configured default is used.
 
@@ -150,6 +159,9 @@ Architectury uses Gradle and requires `fabric_loader_version`, `fabric_api_versi
 Fabric Kotlin projects generate Kotlin Gradle DSL files and use Fabric Language Kotlin. Set `kotlin_loader_version`
 on an individual specification, or `defaults.fabric.version_data.kotlin_loader` globally. The Kotlin compiler plugin
 version is derived from the Fabric Language Kotlin version, and asynchronous Fabric version refreshes update both.
+Fabric specifications also accept `use_official_mappings`, `yarn_version`, `use_fabric_api`, `fabric_api_version`,
+`split_sources`, `generate_datagen`, `use_mixins`, and `client_mixins`. Fabric version catalogs cache for
+`defaults.fabric.cache_ttl` seconds and use stale data with a warning when refresh fails.
 
 ### Custom Templates
 

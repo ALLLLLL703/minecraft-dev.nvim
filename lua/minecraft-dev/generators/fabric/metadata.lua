@@ -1,3 +1,5 @@
+local version_util = require("minecraft-dev.version")
+
 local M = {}
 
 ---@class FabricGenerationOptions
@@ -5,6 +7,11 @@ local M = {}
 ---@field side "client"|"server"|"both"
 ---@field generate_datagen boolean
 ---@field use_mixins boolean
+---@field client_mixins boolean
+---@field split_sources boolean
+---@field use_fabric_api boolean
+---@field use_official_mappings boolean
+---@field target_java_version integer
 ---@field loom_version? string
 ---@field gradle_version? string
 ---@field kotlin_loader_version? string
@@ -107,14 +114,16 @@ function M.entrypoints(ctx, options)
 end
 
 ---@param artifact_id string
----@param use_mixins boolean
----@return string[]?
-function M.mixin_config_refs(artifact_id, use_mixins)
-	if not use_mixins then
-		return nil
+---@param options FabricGenerationOptions
+---@return table[]?
+function M.mixin_config_refs(artifact_id, options)
+	if not options.use_mixins then return nil end
+	local refs = {}
+	if options.side ~= "client" or not options.client_mixins then table.insert(refs, artifact_id .. ".mixins.json") end
+	if options.client_mixins then
+		table.insert(refs, { config = artifact_id .. ".client.mixins.json", environment = "client" })
 	end
-
-	return { artifact_id .. ".mixins.json" }
+	return refs
 end
 
 ---@param ctx ProjectContext
@@ -148,21 +157,26 @@ function M.build_mod_json(ctx, options)
 	end
 	table.insert(lines, indent(1) .. "},")
 
-	local mixin_refs = M.mixin_config_refs(ctx.artifactId, options.use_mixins)
+	local mixin_refs = M.mixin_config_refs(ctx.artifactId, options)
 	if mixin_refs then
-		append_array_property(lines, "mixins", mixin_refs, 1, false)
+		table.insert(lines, indent(1) .. quote("mixins") .. ": [")
+		for index, ref in ipairs(mixin_refs) do
+			local suffix = index < #mixin_refs and "," or ""
+			table.insert(lines, indent(2) .. (type(ref) == "table" and vim.json.encode(ref) or quote(ref)) .. suffix)
+		end
+		table.insert(lines, indent(1) .. "],")
 	end
 
 	table.insert(lines, indent(1) .. quote("depends") .. ": {")
 	local dependencies = {
-		{ "fabricloader", ">=0.15.0" },
-		{ "minecraft", "~" .. ctx.version },
-		{ "java", ">=21" },
-		{ "fabric-api", "*" },
+		{ "fabricloader", ">=" .. tostring(options.loader_version or "0.15.0") },
+		{ "minecraft", ctx.version },
+		{ "java", ">=" .. tostring(options.target_java_version or version_util.required_java(ctx.version)) },
 	}
 	if options.language == "kotlin" then
 		table.insert(dependencies, 2, { "fabric-language-kotlin", ">=" .. options.kotlin_loader_version })
 	end
+	if options.use_fabric_api ~= false then table.insert(dependencies, { "fabric-api", "*" }) end
 	for index, dependency in ipairs(dependencies) do
 		local suffix = index < #dependencies and "," or ""
 		table.insert(lines, indent(2) .. quote(dependency[1]) .. ": " .. quote(dependency[2]) .. suffix)
@@ -186,21 +200,20 @@ end
 ---@param ctx ProjectContext
 ---@param options FabricGenerationOptions
 ---@return string
-function M.mixin_target_class(ctx, options)
-	if options.side == "client" then
-		return "net.minecraft.client.Minecraft"
+function M.mixin_target_class(ctx, options, client)
+	if client or options.side == "client" then
+		return options.use_official_mappings ~= false and "net.minecraft.client.Minecraft" or "net.minecraft.client.MinecraftClient"
 	elseif options.side == "server" then
 		return "net.minecraft.server.MinecraftServer"
 	end
-
-	return "net.minecraft.world.entity.Entity"
+	return options.use_official_mappings ~= false and "net.minecraft.world.entity.Entity" or "net.minecraft.entity.Entity"
 end
 
 ---@param ctx ProjectContext
 ---@param options FabricGenerationOptions
 ---@return string
-function M.mixin_target_method(ctx, options)
-	if options.side == "client" then
+function M.mixin_target_method(ctx, options, client)
+	if client or options.side == "client" then
 		return "run"
 	elseif options.side == "server" then
 		return "runServer"
@@ -212,29 +225,29 @@ end
 ---@param ctx ProjectContext
 ---@param options FabricGenerationOptions
 ---@return string
-function M.mixin_package(ctx, options)
-	return ctx.package .. ".mixin"
+function M.mixin_package(ctx, options, client)
+	return ctx.package .. (client and ".mixin.client" or ".mixin")
 end
 
 ---@param ctx ProjectContext
 ---@return string
-function M.mixin_class_name(ctx)
-	return upper_first_letter(ctx.main) .. "Mixin"
+function M.mixin_class_name(ctx, client)
+	return upper_first_letter(ctx.main) .. (client and "ClientMixin" or "Mixin")
 end
 
 ---@param ctx ProjectContext
 ---@param options FabricGenerationOptions
 ---@return string
-function M.build_mixins_json(ctx, options)
-	local bucket = M.mixin_bucket(options.side)
+function M.build_mixins_json(ctx, options, client)
+	local bucket = client and "client" or M.mixin_bucket(options.side)
 	local lines = {
 		"{",
 		indent(1) .. quote("required") .. ": true,",
-		indent(1) .. quote("package") .. ": " .. quote(M.mixin_package(ctx, options)) .. ",",
-		indent(1) .. quote("compatibilityLevel") .. ": " .. quote("JAVA_21") .. ",",
+		indent(1) .. quote("package") .. ": " .. quote(M.mixin_package(ctx, options, client)) .. ",",
+		indent(1) .. quote("compatibilityLevel") .. ": " .. quote("JAVA_" .. tostring(options.target_java_version or version_util.required_java(ctx.version))) .. ",",
 	}
 
-	append_array_property(lines, bucket, { M.mixin_class_name(ctx) }, 1, false)
+	append_array_property(lines, bucket, { M.mixin_class_name(ctx, client) }, 1, false)
 	table.insert(lines, indent(1) .. quote("injectors") .. ": {")
 	table.insert(lines, indent(2) .. quote("defaultRequire") .. ": 1")
 	table.insert(lines, indent(1) .. "}")

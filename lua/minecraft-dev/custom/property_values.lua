@@ -77,8 +77,8 @@ function M.parse_maven_versions(content, limit)
 	end
 	local versions = {}
 	local seen = {}
-	for version in content:gmatch("<version>%s*([^<]+)%s*</version>") do
-		version = vim.trim(version)
+	for raw_version in content:gmatch("<version>%s*([^<]+)%s*</version>") do
+		local version = vim.trim(raw_version)
 		if parse_version(version) and not seen[version] then
 			seen[version] = true
 			table.insert(versions, version)
@@ -89,6 +89,18 @@ function M.parse_maven_versions(content, limit)
 	local limited = {}
 	for index = 1, math.min(#versions, limit) do limited[index] = versions[index] end
 	return limited, nil
+end
+
+local function apply_raw_version_filter(values, descriptor)
+	local filter = descriptor.parameters and descriptor.parameters.rawVersionFilter
+	if type(filter) ~= "string" or filter == "" then return values end
+	local required = filter:match("^%$version%.contains%(['\"](.-)['\"]%)$")
+	if not required then return values end
+	local filtered = {}
+	for _, value in ipairs(values) do
+		if value:find(required, 1, true) then table.insert(filtered, value) end
+	end
+	return filtered
 end
 
 ---@param descriptor table
@@ -143,7 +155,11 @@ function M.load(descriptor, callback, system)
 		end
 		local parsed, values, parse_error = pcall(function()
 			if descriptor.type == "paper_versions" then return M.parse_paper_versions(result.stdout) end
-			return M.parse_maven_versions(result.stdout, descriptor.limit)
+			local versions, err = M.parse_maven_versions(result.stdout, descriptor.limit)
+			if not versions then return nil, err end
+			versions = apply_raw_version_filter(versions, descriptor)
+			if #versions == 0 then return nil, { code = "property_response_empty", property_type = descriptor.type } end
+			return versions, nil
 		end)
 		if not parsed then
 			local err = { code = "property_response_invalid", property_type = descriptor.type, detail = values }

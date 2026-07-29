@@ -149,15 +149,15 @@
 
 上游证据：`templates:fabric/.mcdev.template.json` 和 `FabricVersionsCreatorProperty.kt`。
 
-- [ ] MC 正式版/快照切换。
-- [ ] Yarn 与 Mojang mappings 选择。
-- [ ] Fabric API 可关闭。
-- [ ] Kotlin Loader 版本选择。
-- [ ] MC >= 1.18 时可拆分 client source set。
-- [ ] 主 Mixin 与 client Mixin 分离。
-- [ ] datagen 只在 Fabric API 启用时开放。
-- [ ] 版本 API 无精确匹配时给出回退列表和警告。
-- [ ] 修复 26.1 版本族、缓存 TTL、稳定版筛选和响应排序。
+- [x] MC 正式版/快照切换。
+- [x] Yarn 与 Mojang mappings 选择。
+- [x] Fabric API 可关闭。
+- [x] Kotlin Loader 版本选择。
+- [x] MC >= 1.18 时可拆分 client source set。
+- [x] 主 Mixin 与 client Mixin 分离。
+- [x] datagen 只在 Fabric API 启用时开放。
+- [x] 版本 API 无精确匹配时给出回退列表和警告。
+- [x] 修复 26.1 版本族、缓存 TTL、稳定版筛选和响应排序。
 
 验收：官方 Fabric 描述符不需要手输 JSON，所有复合版本字段都由选择器产生。
 

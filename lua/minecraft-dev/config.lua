@@ -24,6 +24,11 @@ M.default_config = {
 			side = "both",
 			generate_datagen = true,
 			use_mixins = false,
+			use_official_mappings = true,
+			use_fabric_api = true,
+			split_sources = true,
+			client_mixins = true,
+			cache_ttl = 24 * 60 * 60,
 			version_data = {
 				gradle_version = "9.6.1",
 				loom_version = "1.16-SNAPSHOT",
@@ -58,6 +63,15 @@ M.default_config = {
 			loom_version = "loom version?",
 			select_language = "Select language",
 			select_side = "Select environment side",
+			show_snapshots = "Show Minecraft snapshots?",
+			minecraft_version = "Select Minecraft version",
+			loader_version = "Select Fabric Loader version",
+			yarn_version = "Select Yarn mappings",
+			use_official_mappings = "Use official Mojang mappings?",
+			use_fabric_api = "Use Fabric API?",
+			fabric_api_version = "Select Fabric API version",
+			split_sources = "Split client sources?",
+			client_mixins = "Generate a separate client Mixin?",
 			generate_datagen = "Generate datagen entrypoint?",
 			use_mixins = "Generate mixin config and example?",
 			telescope_title = "select language",
@@ -111,6 +125,8 @@ M.default_config = {
 			maven_unsupported = "Fabric Maven template is not supported yet",
 			lower_version_unsupported = "Lower Minecraft versions are not supported for Fabric yet",
 			generated = "Generated Fabric mod project successfully.",
+			no_matching_yarn = "No Yarn mappings match Minecraft %s; showing fallback versions.",
+			no_matching_api = "No Fabric API version matches Minecraft %s; showing fallback versions.",
 		},
 	},
 }
@@ -128,7 +144,11 @@ function M.normalize(opts)
 		normalized.debug = nil
 	end
 
-	return vim.tbl_deep_extend("force", vim.deepcopy(M.default_config), normalized)
+	normalized = vim.tbl_deep_extend("force", vim.deepcopy(M.default_config), normalized)
+	if type(normalized.defaults.fabric.cache_ttl) ~= "number" or normalized.defaults.fabric.cache_ttl < 0 then
+		normalized.defaults.fabric.cache_ttl = M.default_config.defaults.fabric.cache_ttl
+	end
+	return normalized
 end
 
 return M

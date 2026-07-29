@@ -169,3 +169,19 @@ require("minecraft-dev").generate({
 - Kotlin Gradle/Maven 分别使用 Shadow/Shade 打包运行时；九个受影响组合回归构建通过，代表性产物均包含 `kotlin/Unit.class`。报告为 `/tmp/minecraft-dev-p14-kotlin-packaging.json`。
 - 三个平台的原生 Java/Kotlin × Gradle/Maven 十二组合构建通过，首轮报告为 `/tmp/minecraft-dev-p14-proxy-sponge.json`，修复项报告为 `/tmp/minecraft-dev-p14-proxy-fixed.json`。
 - 官方 BungeeCord/Sponge descriptor 八组合构建通过；wrapper finalizer 保留模板声明的 Gradle 8.8，结果记录于 `/tmp/minecraft-dev-p14-descriptors.json`、`/tmp/minecraft-dev-p14-descriptors-fixed2.json` 和 `/tmp/minecraft-dev-p14-sponge-descriptor-rerun.json`。
+
+## 当前实现切片：P1.5 Fabric
+
+- 参考 `minecraft-dev/templates@40b091262cff4130b9f61bc25de6cb9e2439d745` 的 Fabric descriptor、Gradle 模板和 metadata 模板，以及 `minecraft-dev/MinecraftDev@6da60db01112200c2b4c73795bdf18db17aa2023` 的 `FabricVersionsCreatorProperty`、`FabricVersionsModel`、`FabricVersions` 与 `FabricApiVersions`。
+- `lua/minecraft-dev/generators/fabric/version_data.lua` 负责唯一的 Fabric 版本目录：并行读取 Fabric Meta、Modrinth Fabric API 和 Loom Maven metadata，显式排序 Loader、Yarn、API 与 Loom 候选，并保留 Fabric Meta 提供的 Minecraft 正式版/快照顺序。Fabric Language Kotlin 继续由仅 Kotlin 项目可见的 Maven property 独立加载，避免其故障阻塞 Java 项目。
+- 版本目录缓存放在现有 `stdpath("cache")/minecraft-dev/fabric` 下；`defaults.fabric.cache_ttl` 控制新鲜度。新鲜缓存直接复用，网络失败时允许使用过期缓存并返回结构化 warning，不把回退伪装成精确在线结果。
+- `fabric_versions` 由专用向导顺序选择是否显示快照、Minecraft、Loom、Loader、Yarn/Mojang mappings、Fabric API 开关及 API 版本，输出与上游模型同名的 `minecraftVersion`、`loom`、`loader`、`yarn`、`useFabricApi`、`fabricApi`、`useOfficialMappings` 字段，不再降级为手输 JSON。
+- Yarn 或 Fabric API 没有当前 Minecraft 精确匹配时，选择器提供完整倒序候选并通过本地化 warning 明确告知用户；取消、请求失败和回退均沿用现有异步 child operation 生命周期。
+- 原生 `fabric` spec 增加 `use_official_mappings`、`yarn_version`、`use_fabric_api`、`fabric_api_version`、`split_sources` 和 `client_mixins`；datagen 在 Fabric API 关闭时被规范化为 false，split sources 仅在 Minecraft 1.18+ 生效，client Mixin 仅在 split source set 且存在客户端环境时生成。
+- Gradle 模板按选项条件输出 Yarn/Mojang mappings、Fabric API、datagen 与 split source sets。Minecraft 26.1+ 使用 `net.fabricmc.fabric-loom` 和 `implementation` 配置；较早版本保留 `fabric-loom`、`mappings` 与 `modImplementation`。
+- metadata 的 Loader、Minecraft、Java、Fabric API 和 Kotlin 约束使用实际选中版本；主 Mixin 与 client Mixin 分别写入 main/client resources，并让源码包、配置 bucket 与 source set 一致。
+- Gradle 9.6 将 Kotlin DSL 的 `project.property()` 暴露为 `Any?`，而上游 Fabric 模板直接把它放入 `expand` map 会编译失败；custom renderer 仅对 `.gradle.kts` 的实际 `expand(...)` 范围内、以字符串键引用 Gradle property 的 map pair 补充 `as String`，不修改缓存模板或绑定 Fabric 路径。
+- 快速回归使用固定 Fabric Meta、Modrinth 和 Maven fixture，覆盖稳定版筛选、26.1、响应乱序、精确/回退选择、TTL、取消、官方 descriptor 选择器及原生 Java/Kotlin 生成。真实构建覆盖 Yarn/Mojang、API on/off、split/client Mixin/datagen 和 26.1 新 Loom 插件族。
+- 原生 Java/Yarn/API-off 与 Kotlin/26.1/split 两组合真实构建通过，报告为 `/tmp/minecraft-dev-p15-fabric.json`；实际官方 Fabric descriptor 的 Java/Yarn 与 Kotlin/26.1 两组合构建通过，报告为 `/tmp/minecraft-dev-p15-fabric-descriptors.json`。
+- 独立审查覆盖缓存、异步重入、26.1 mappings、client-only source set、顶层版本 override、warning 传播、fallback 排序、Kotlin DSL 转换和输入验证；修复后复审无 finding。
+- 已评估 `rest.nvim` 和通用 Neovim async 库；`rest.nvim` 面向 HTTP 文件交互并引入 Tree-sitter/LuaRocks 依赖，通用 async 库也不会减少固定请求的解析与领域筛选逻辑。继续复用 Neovim 0.12 内置 `vim.system`、`vim.json`、`vim.fs` 和现有 curl 生命周期，不增加运行时依赖。

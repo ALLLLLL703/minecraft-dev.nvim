@@ -67,12 +67,36 @@ function M.validate(spec)
 	if spec.platform == "fabric" and require("minecraft-dev.version").resolve_family(spec.minecraft_version) ~= "v1_13_plus" then
 		return nil, validation_error("unsupported_version", "minecraft_version")
 	end
+	if spec.platform == "fabric" and spec.fabric_version_data ~= nil and type(spec.fabric_version_data) ~= "table" then
+		return nil, validation_error("invalid_type", "fabric_version_data")
+	end
 	if spec.platform == "fabric" and spec.language == "kotlin" then
 		local fabric_versions = spec.fabric_version_data or {}
 		local defaults = require("minecraft-dev").config.defaults.fabric.version_data
 		local kotlin_loader = spec.kotlin_loader_version or fabric_versions.kotlin_loader or defaults.kotlin_loader
 		if type(kotlin_loader) ~= "string" or not kotlin_loader:match("^[%w_.-]+%+kotlin%.[%w_.-]+$") then
 			return nil, validation_error("invalid_version", "kotlin_loader_version")
+		end
+	end
+	if spec.platform == "fabric" then
+		for _, field in ipairs({ "generate_datagen", "use_mixins", "use_official_mappings", "use_fabric_api", "split_sources", "client_mixins" }) do
+			if spec[field] ~= nil and type(spec[field]) ~= "boolean" then
+				return nil, validation_error("invalid_type", field)
+			end
+		end
+		if spec.use_official_mappings == false and not require("minecraft-dev.version").at_least(spec.minecraft_version, 26, 1) then
+			local yarn = spec.yarn_version or (spec.fabric_version_data and spec.fabric_version_data.yarn)
+			if type(yarn) ~= "string" or yarn == "" then return nil, validation_error("missing_field", "yarn_version") end
+		end
+		if spec.fabric_api_version ~= nil and (type(spec.fabric_api_version) ~= "string" or spec.fabric_api_version == "") then
+			return nil, validation_error("invalid_version", "fabric_api_version")
+		end
+		if spec.use_fabric_api ~= false and spec.fabric_version_data then
+			local fabric_api = spec.fabric_api_version or spec.fabric_version_data.fabric_api
+			if type(fabric_api) == "table" then fabric_api = fabric_api[1] end
+			if type(fabric_api) ~= "string" or fabric_api == "" then
+				return nil, validation_error("missing_field", "fabric_api_version")
+			end
 		end
 	end
 	if spec.waterfall_version ~= nil and (type(spec.waterfall_version) ~= "string" or spec.waterfall_version == "") then

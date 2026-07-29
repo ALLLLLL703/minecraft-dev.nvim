@@ -179,6 +179,24 @@ local function collect_properties(descriptor, provided)
 	return properties
 end
 
+local function normalize_kotlin_dsl_property_pairs(destination, content)
+	if not destination:match("%.gradle%.kts$") then return content end
+	local output = {}
+	local expand_depth = 0
+	for raw_line in (content .. "\n"):gmatch("(.-)\n") do
+		local line = raw_line
+		local opens = select(2, line:gsub("%(", ""))
+		local closes = select(2, line:gsub("%)", ""))
+		if expand_depth > 0 or line:find("expand%(") then
+			-- Gradle 9 exposes project.property() as Any?; expand map values must be non-null.
+			line = line:gsub('("[^"]+"%s+to%s+)project%.property%(("[^"]+")%)', "%1(project.property(%2) as String)")
+			expand_depth = expand_depth + opens - closes
+		end
+		table.insert(output, line)
+	end
+	return table.concat(output, "\n")
+end
+
 local function generate_from_root(options, root)
 	root = vim.fs.normalize(root)
 	local descriptor_path = options.descriptor and path.join(root, options.descriptor) or path.join(root, ".mcdev.template.json")
@@ -207,7 +225,8 @@ local function generate_from_root(options, root)
 			if not template_content then return nil, { code = "template_missing", path = template_relative } end
 			local file_properties = vim.tbl_extend("force", vim.deepcopy(properties), file.properties or {})
 			fs.mkdir(vim.fs.dirname(destination_path))
-			fs.write_file(destination_path, evaluator.render(file_properties, template_content))
+			local rendered = evaluator.render(file_properties, template_content)
+			fs.write_file(destination_path, normalize_kotlin_dsl_property_pairs(destination_path, rendered))
 			table.insert(generated, destination_path)
 		end
 	end

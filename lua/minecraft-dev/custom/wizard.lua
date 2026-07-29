@@ -1,5 +1,6 @@
 local M = {}
 local evaluator = require("minecraft-dev.custom.evaluator")
+local fabric_versions = require("minecraft-dev.custom.fabric_versions")
 local property_values = require("minecraft-dev.custom.property_values")
 local notify = require("minecraft-dev.util.notify")
 
@@ -89,7 +90,7 @@ local function ask_version_property(descriptor, properties, callback, on_child, 
 			if value == nil then callback(true) else properties[descriptor.name] = transform and transform(value) or value callback(false) end
 		end)
 	end)
-	if operation then on_child(operation) end
+	if operation and operation.status == "pending" then on_child(operation) end
 	if load_error then callback(false, load_error) end
 	return operation
 end
@@ -123,6 +124,17 @@ local function ask_property(descriptor, properties, callback, on_child, is_pendi
 	end
 	if descriptor.type == "paper_versions" then
 		return ask_version_property(descriptor, properties, callback, on_child, is_pending)
+	end
+	if descriptor.type == "fabric_versions" then
+		local operation, select_error = fabric_versions.select(descriptor, function(value, err, warnings)
+			if not is_pending() then return end
+			if not value then callback(err and err.code == "cancelled", err) return end
+			properties[descriptor.name] = value
+			callback(false, nil, warnings)
+		end)
+		if operation and operation.status == "pending" then on_child(operation) end
+		if select_error then callback(false, select_error) end
+		return operation
 	end
 	if descriptor.type == "maven_artifact_version" then
 		return ask_version_property(descriptor, properties, callback, on_child, is_pending)
@@ -163,17 +175,22 @@ local function collect(descriptor, properties, callback)
 	flatten(descriptor.properties, descriptors)
 	local operation = { status = "pending" }
 	local active
+	local warnings = {}
+	local function append_warnings(values)
+		for _, warning in ipairs(values or {}) do table.insert(warnings, warning) end
+	end
 	local function finish(values, cancelled, err)
 		if operation.status ~= "pending" then return end
 		operation.status = err and "failed" or cancelled and "cancelled" or "generated"
-		callback(values, cancelled, err)
+		callback(values, cancelled, err, #warnings > 0 and warnings or nil)
 	end
 	local function next_property(index)
 		if operation.status ~= "pending" then return end
 		if index > #descriptors then finish(properties, false) return end
 		local previous_active = active
-		local property_operation = ask_property(descriptors[index], properties, function(cancelled, err)
+		local property_operation = ask_property(descriptors[index], properties, function(cancelled, err, property_warnings)
 			active = nil
+			append_warnings(property_warnings)
 			if err and err.code ~= "cancelled" then finish(nil, false, err)
 			elseif cancelled then finish(nil, true)
 			else next_property(index + 1) end
@@ -188,7 +205,7 @@ local function collect(descriptor, properties, callback)
 	return operation
 end
 
-local function generate(template, directory, properties, callback)
+local function generate(template, directory, properties, warnings, callback)
 	return require("minecraft-dev").generate_template({
 		provider = "builtin",
 		descriptor = template.descriptor,
@@ -196,6 +213,7 @@ local function generate(template, directory, properties, callback)
 		properties = properties,
 		use_git = properties.USE_GIT,
 		callback = function(result)
+			if warnings and result.status == "generated" then result.warnings = vim.deepcopy(warnings) end
 			if result.status == "failed" then
 				notify.notify(vim.log.levels.ERROR, { "custom", "generation_failed" }, vim.inspect(result.error))
 			elseif result.status == "generated" then
@@ -244,7 +262,7 @@ function M.run(callback)
 						if name_cancelled then finish({ status = "cancelled" }); return end
 						local properties = { PROJECT_NAME = project_name, USE_GIT = false }
 						local previous_child = child
-						local collection = collect(template.definition, properties, function(values, cancelled, collect_error)
+						local collection = collect(template.definition, properties, function(values, cancelled, collect_error, warnings)
 							if operation.status ~= "pending" then return end
 							if cancelled then finish({ status = "cancelled" }); return end
 							if collect_error then
@@ -252,7 +270,7 @@ function M.run(callback)
 								finish({ status = "failed", error = collect_error })
 								return
 							end
-							child = generate(template, directory, values, finish)
+							child = generate(template, directory, values, warnings, finish)
 						end)
 						if child == previous_child then child = collection end
 					end)

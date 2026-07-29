@@ -225,7 +225,7 @@ local function test_command_platform_generation()
 	local original_input = vim.fn.input
 	local original_resolve_waterfall = plugin_version_data.resolve_waterfall_version
 	paper_options.with_language = function(_, callback) callback("java") end
-	fabric_options.collect = function(callback)
+	fabric_options.collect = function(_, callback)
 		callback({ language = "java", side = "both", generate_datagen = true, use_mixins = true })
 	end
 	gradle.generate_gradlew = function() return true end
@@ -464,6 +464,13 @@ final class Disabled {}
 #end
 ]])
 	template_fs.write_file(template_root .. "/optional.ft", "enabled=${ENABLED}\n")
+	template_fs.write_file(template_root .. "/build.gradle.kts.ft", [[tasks.processResources {
+    filesMatching("plugin.json") {
+        expand("version" to project.property("version"))
+    }
+}
+val untouched = mapOf("count" to project.property("count"))
+]])
 	template_fs.write_file(template_root .. "/.mcdev.template.json", vim.json.encode({
 		version = 3,
 		properties = {
@@ -474,6 +481,7 @@ final class Disabled {}
 		files = {
 			{ template = "templates/Main.java.ft", destination = "src/${PACKAGE}/${CLASS_NAME}.java" },
 			{ template = "optional.ft", destination = "optional.txt", condition = "$ENABLED" },
+			{ template = "build.gradle.kts.ft", destination = "build.gradle.kts" },
 		},
 	}))
 
@@ -489,6 +497,8 @@ final class Disabled {}
 	local source = read_file(destination .. "/src/dev.example/Demo.java")
 	assert_truthy(source:find("public class Demo", 1, true) ~= nil, "Velocity condition and variables should render")
 	assert_equal(vim.fn.filereadable(destination .. "/optional.txt"), 1, "true file condition should generate file")
+	assert_truthy(read_file(destination .. "/build.gradle.kts"):find('to (project.property("version") as String)', 1, true) ~= nil, "Kotlin DSL property map values should be non-null for Gradle 9")
+	assert_truthy(read_file(destination .. "/build.gradle.kts"):find('"count" to project.property("count")', 1, true) ~= nil, "Kotlin DSL property normalization should remain scoped to expand maps")
 	vim.fn.delete(template_root, "rf")
 	vim.fn.delete(destination, "rf")
 end
@@ -579,6 +589,23 @@ local function test_custom_paper_version_values()
 	assert_equal(maven_operation.status, "generated", "Gradle plugin metadata loading should complete")
 	assert_equal(maven_result.values[1], "3.0.0", "Gradle plugin metadata loading should return the newest version")
 	assert_equal(maven_command[#maven_command], "https://repo.example/plugin/maven-metadata.xml", "Gradle plugin loading should use descriptor sourceUrl")
+	local kotlin_result
+	custom_property_values.load({
+		type = "maven_artifact_version",
+		parameters = {
+			sourceUrl = "https://repo.example/fabric-language-kotlin/maven-metadata.xml",
+			rawVersionFilter = "$version.contains('+kotlin.')",
+		},
+	}, function(values) kotlin_result = values end, function(_, _, callback)
+		callback({
+			code = 0,
+			stdout = "<metadata><versioning><versions><version>2.4.10</version><version>1.13.13+kotlin.2.4.10</version></versions></versioning></metadata>",
+			stderr = "",
+		})
+		return { kill = function() end }
+	end)
+	vim.wait(1000, function() return kotlin_result ~= nil end, 10)
+	assert_equal(kotlin_result, { "1.13.13+kotlin.2.4.10" }, "Maven property loading should honor the Fabric Kotlin raw version filter")
 end
 
 local function test_custom_paper_build_option_wizard()
@@ -1275,7 +1302,196 @@ local function test_custom_finalizer_cancellation()
 	vim.fn.delete(destination, "rf")
 end
 
+local function fabric_catalog_fixture()
+	return fabric_version_data.parse_catalog_responses(
+		vim.json.encode({
+			game = {
+				{ version = "26.1.2", stable = true },
+				{ version = "26.2-snapshot-1", stable = false },
+				{ version = "1.21.1", stable = true },
+			},
+			loader = { { version = "0.16.0-rc.9" }, { version = "0.16.0-rc.10" }, { version = "0.16.9" }, { version = "0.19.3" } },
+			mappings = {
+				{ gameVersion = "1.20.1", version = "1.20.1+build.2", build = 2 },
+				{ gameVersion = "1.21.1", version = "1.21.1+build.1", build = 1 },
+				{ gameVersion = "1.21.1", version = "1.21.1+build.3", build = 3 },
+			},
+		}),
+		vim.json.encode({
+			{
+				version_number = "0.115.0+1.21.1",
+				game_versions = { "1.21.1" },
+				files = { { filename = "fabric-api-0.115.0+1.21.1.jar" } },
+			},
+			{
+				version_number = "0.116.15+1.21.1",
+				game_versions = { "1.21.1" },
+				files = { { filename = "fabric-api-0.116.15+1.21.1.jar" } },
+			},
+			{
+				version_number = "0.155.2+26.1.2",
+				game_versions = { "26.1", "26.1.1", "26.1.2" },
+				files = { { filename = "fabric-api-0.155.2+26.1.2.jar" } },
+			},
+		}),
+		"<metadata><versioning><versions><version>1.16-SNAPSHOT</version><version>1.17.17</version></versions></versioning></metadata>"
+	)
+end
+
+local function test_custom_fabric_version_wizard()
+	local minecraft_dev = require("minecraft-dev")
+	local wizard = require("minecraft-dev.custom.wizard")
+	local original_list_templates = minecraft_dev.list_templates
+	local original_generate_template = minecraft_dev.generate_template
+	local original_load_catalog = fabric_version_data.load_catalog
+	local original_property_load = custom_property_values.load
+	local original_input = vim.ui.input
+	local original_select = vim.ui.select
+	local generated_properties
+	local inputs = { "/tmp/fabric-wizard", "fabric-wizard" }
+	local input_count = 0
+	local catalog = fabric_catalog_fixture()
+	local catalog_warning = { code = "version_fetch_failed", source = "api" }
+	local include_kotlin = false
+
+	minecraft_dev.list_templates = function(options)
+		local properties = { { name = "VERSIONS", type = "fabric_versions" } }
+		if include_kotlin then
+			table.insert(properties, { name = "KOTLIN_LOADER_VERSION", type = "maven_artifact_version", parameters = { sourceUrl = "https://repo.example/kotlin.xml" } })
+		end
+		options.callback({ {
+			label = "Fabric",
+			group = "mod",
+			descriptor = "fabric/.mcdev.template.json",
+			definition = { properties = properties },
+		} }, nil)
+		return { status = "generated", cancel = function() end }
+	end
+	minecraft_dev.generate_template = function(options)
+		generated_properties = options.properties
+		local result = { status = "generated" }
+		options.callback(result)
+		return { status = "generated", result = result, cancel = function() end }
+	end
+	fabric_version_data.load_catalog = function(callback)
+		callback(catalog, catalog_warning)
+		return { status = "generated", cancel = function() end }, nil
+	end
+	vim.ui.input = function(_, callback)
+		input_count = input_count + 1
+		callback(table.remove(inputs, 1))
+	end
+	vim.ui.select = function(items, select_options, callback)
+		local picker_prompt = select_options.prompt
+		if type(items[1]) == "table" and items[1].definition then callback(items[1])
+		elseif picker_prompt == require("minecraft-dev").config.prompts.fabric.show_snapshots then callback(false)
+		elseif picker_prompt == require("minecraft-dev").config.prompts.fabric.minecraft_version then callback("1.21.1")
+		elseif picker_prompt == require("minecraft-dev").config.prompts.fabric.use_official_mappings then callback(false)
+		elseif picker_prompt == require("minecraft-dev").config.prompts.fabric.use_fabric_api then callback(true)
+		else callback(items[1]) end
+	end
+
+	local operation = wizard.run()
+	local first_input_count = input_count
+	include_kotlin = true
+	catalog_warning = nil
+	inputs = { "/tmp/fabric-wizard-cancel", "fabric-wizard-cancel" }
+	local kotlin_cancelled = false
+	custom_property_values.load = function(_, callback)
+		local child = { status = "pending" }
+		function child.cancel()
+			kotlin_cancelled = true
+			child.status = "cancelled"
+			callback(nil, { code = "cancelled" })
+		end
+		return child, nil
+	end
+	local cancelling = wizard.run()
+	assert_equal(cancelling.status, "pending", "Fabric wizard should wait for Kotlin metadata after a synchronous catalog selection")
+	cancelling.cancel()
+	minecraft_dev.list_templates = original_list_templates
+	minecraft_dev.generate_template = original_generate_template
+	fabric_version_data.load_catalog = original_load_catalog
+	custom_property_values.load = original_property_load
+	vim.ui.input = original_input
+	vim.ui.select = original_select
+
+	assert_equal(operation.status, "generated", "Fabric wizard should generate without a JSON property prompt")
+	assert_equal(operation.result.warnings, { { code = "version_fetch_failed", source = "api" } }, "stale Fabric catalog warnings should reach the final wizard result")
+	assert_equal(first_input_count, 2, "Fabric versions should only require directory and project name text input")
+	assert_equal(generated_properties.VERSIONS.minecraftVersion, "1.21.1", "Fabric selector should retain the selected Minecraft version")
+	assert_equal(generated_properties.VERSIONS.loader, "0.19.3", "Fabric selector should sort and select the newest Loader")
+	assert_equal(generated_properties.VERSIONS.yarn.name, "1.21.1+build.3", "Fabric selector should select matching Yarn mappings")
+	assert_equal(generated_properties.VERSIONS.fabricApi, "0.116.15+1.21.1", "Fabric selector should select the newest matching Fabric API")
+	assert_equal(generated_properties.VERSIONS.useOfficialMappings, false, "Fabric selector should preserve the mappings choice")
+	assert_equal(kotlin_cancelled, true, "Fabric wizard cancellation should reach a later Kotlin metadata request")
+	assert_equal(cancelling.status, "cancelled", "Fabric wizard should settle as cancelled after terminating Kotlin metadata")
+end
+
 local function test_fabric_online_version_parser()
+	local catalog = fabric_catalog_fixture()
+	assert_equal(fabric_version_data.minecraft_versions(catalog, false), { "26.1.2", "1.21.1" }, "stable Fabric versions should exclude snapshots and retain API order")
+	assert_equal(fabric_version_data.minecraft_versions(catalog, true)[2], "26.2-snapshot-1", "snapshot selection should expose unstable Minecraft versions")
+	assert_equal(catalog.loader, { "0.19.3", "0.16.9", "0.16.0-rc.10", "0.16.0-rc.9" }, "Fabric loaders should use numeric prerelease sorting")
+	local yarn, yarn_exact = fabric_version_data.yarn_versions(catalog, "1.21.1")
+	assert_equal(yarn_exact, true, "matching Yarn versions should be marked exact")
+	assert_equal(yarn[1].name, "1.21.1+build.3", "matching Yarn versions should use descending build order")
+	local fallback_yarn, fallback_yarn_exact = fabric_version_data.yarn_versions(catalog, "26.1.2")
+	assert_equal(fallback_yarn_exact, false, "missing Yarn versions should be marked as fallback")
+	assert_equal(#fallback_yarn, 3, "missing Yarn versions should expose the complete fallback list")
+	assert_equal(fallback_yarn[1].name, "1.21.1+build.3", "Yarn fallback versions should sort by game version before build number")
+	local api, api_exact = fabric_version_data.fabric_api_versions(catalog, "1.21.1")
+	assert_equal(api_exact, true, "matching Fabric API versions should be marked exact")
+	assert_equal(api[1], "0.116.15+1.21.1", "Fabric API versions should be sorted newest first")
+	assert_equal(fabric_version_data.cache_is_fresh(100, 160, 60), true, "Fabric cache should remain fresh at the TTL boundary")
+	assert_equal(fabric_version_data.cache_is_fresh(100, 161, 60), false, "Fabric cache should expire after the configured TTL")
+	local catalog_cache = vim.fs.joinpath(vim.fn.stdpath("cache"), "minecraft-dev", "fabric", "catalog.json")
+	local cache_existed = vim.fn.filereadable(catalog_cache) == 1
+	local cache_backup = cache_existed and vim.fn.readfile(catalog_cache) or nil
+	vim.fn.mkdir(vim.fs.dirname(catalog_cache), "p")
+	local fresh_cache = vim.deepcopy(catalog)
+	fresh_cache._cached_at = os.time()
+	vim.fn.writefile({ vim.json.encode(fresh_cache) }, catalog_cache)
+	local fresh_catalog
+	local fresh_operation = fabric_version_data.load_catalog(function(value, err)
+		fresh_catalog = { value = value, err = err }
+	end)
+	assert_equal(fresh_operation.status, "generated", "fresh Fabric catalog caches should skip network refresh")
+	assert_equal(fresh_catalog.err, nil, "fresh Fabric catalog caches should not warn")
+	assert_equal(fresh_catalog.value.loader[1], "0.19.3", "fresh Fabric catalog caches should preserve parsed values")
+
+	local stale_cache = vim.deepcopy(catalog)
+	stale_cache._cached_at = os.time() - require("minecraft-dev").config.defaults.fabric.cache_ttl - 1
+	vim.fn.writefile({ vim.json.encode(stale_cache) }, catalog_cache)
+	local stale_requests = {}
+	local stale_result
+	local stale_operation = fabric_version_data.load_catalog(function(value, err)
+		stale_result = { value = value, err = err }
+	end, function(_, _, callback)
+		table.insert(stale_requests, callback)
+		return { kill = function() end }
+	end)
+	assert_equal(#stale_requests, 3, "expired Fabric catalogs should refresh every required source")
+	for _, request_callback in ipairs(stale_requests) do request_callback({ code = 22, stderr = "offline" }) end
+	vim.wait(1000, function() return stale_result ~= nil end, 10)
+	assert_equal(stale_operation.status, "generated", "expired Fabric catalogs should fall back to stale data on network failure")
+	assert_equal(stale_result.err.code, "version_fetch_failed", "stale Fabric catalog fallback should preserve the refresh warning")
+	assert_equal(stale_result.value.loader[1], "0.19.3", "stale Fabric catalog fallback should return cached values")
+
+	vim.fn.writefile({ "{" }, catalog_cache)
+	local corrupt_requests = {}
+	local corrupt_result
+	local corrupt_operation = fabric_version_data.load_catalog(function(value, err)
+		corrupt_result = { value = value, err = err }
+	end, function(_, _, callback)
+		table.insert(corrupt_requests, callback)
+		return { kill = function() end }
+	end)
+	for _, request_callback in ipairs(corrupt_requests) do request_callback({ code = 22, stderr = "offline" }) end
+	vim.wait(1000, function() return corrupt_result ~= nil end, 10)
+	assert_equal(corrupt_operation.status, "failed", "corrupt Fabric catalogs should not be used as stale fallback")
+	assert_equal(corrupt_result.value, nil, "corrupt Fabric catalogs should not return data")
+	if cache_existed then vim.fn.writefile(cache_backup, catalog_cache) else vim.fn.delete(catalog_cache) end
 	local parsed = fabric_version_data.parse_responses(
 		vim.json.encode({ { loader = { version = "0.19.3", stable = true } } }),
 		vim.json.encode({ { version = "1.21.1+build.3" } }),
@@ -1339,6 +1555,22 @@ local function test_fabric_online_version_parser()
 	end, function() error("cannot start curl") end)
 	assert_equal(failed_spawn.status, "generated", "curl startup failures should settle after fallback data is returned")
 	assert_equal(spawn_failure_count, 1, "curl startup failures should callback exactly once")
+
+	local catalog_requests = {}
+	local catalog_cancelled
+	local catalog_operation = fabric_version_data.load_catalog(function(_, err) catalog_cancelled = err end, function(_, _, callback)
+		local request = { callback = callback, killed = false }
+		function request.kill() request.killed = true end
+		table.insert(catalog_requests, request)
+		return request
+	end)
+	catalog_operation.cancel()
+	for _, request in ipairs(catalog_requests) do
+		assert_equal(request.killed, true, "catalog cancellation should terminate every Fabric request")
+		request.callback({ code = 143, stderr = "cancelled" })
+	end
+	vim.wait(1000, function() return catalog_operation.status == "cancelled" end, 10)
+	assert_equal(catalog_cancelled.code, "cancelled", "catalog cancellation should use the structured cancellation contract")
 end
 
 local function test_forge_family_generation()
@@ -1794,6 +2026,30 @@ local function test_project_validation()
 	local unsupported, unsupported_err = project.validate(vim.tbl_extend("force", valid, { build_system = "maven", platform = "fabric" }))
 	assert_equal(unsupported, nil, "unsupported platform/build pair should be rejected")
 	assert_equal(unsupported_err.code, "unsupported_build", "unsupported build should return a structured error")
+	local fabric = vim.tbl_extend("force", valid, { platform = "fabric", minecraft_version = "1.21.1" })
+	local invalid_option, invalid_option_error = project.validate(vim.tbl_extend("force", fabric, { use_fabric_api = "yes" }))
+	assert_equal(invalid_option, nil, "non-boolean Fabric options should be rejected")
+	assert_equal(invalid_option_error, { code = "invalid_type", field = "use_fabric_api" }, "invalid Fabric option types should remain structured")
+	local missing_yarn, missing_yarn_error = project.validate(vim.tbl_extend("force", fabric, { use_official_mappings = false }))
+	assert_equal(missing_yarn, nil, "Yarn mappings should require an explicit version before 26.1")
+	assert_equal(missing_yarn_error, { code = "missing_field", field = "yarn_version" }, "missing Yarn versions should remain structured")
+	local invalid_api, invalid_api_error = project.validate(vim.tbl_extend("force", fabric, { fabric_api_version = "" }))
+	assert_equal(invalid_api, nil, "empty Fabric API overrides should be rejected")
+	assert_equal(invalid_api_error, { code = "invalid_version", field = "fabric_api_version" }, "invalid Fabric API versions should remain structured")
+	local missing_api, missing_api_error = project.validate(vim.tbl_extend("force", fabric, {
+		use_fabric_api = true,
+		fabric_version_data = { loader = "0.16.14" },
+	}))
+	assert_equal(missing_api, nil, "explicit Fabric version data should include API coordinates when API is enabled")
+	assert_equal(missing_api_error, { code = "missing_field", field = "fabric_api_version" }, "missing Fabric API versions should remain structured")
+	local listed_api, listed_api_error = project.validate(vim.tbl_extend("force", fabric, {
+		fabric_version_data = { loader = "0.16.14", fabric_api = { "0.116.15+1.21.1" } },
+	}))
+	assert_truthy(listed_api ~= nil, "Fabric API version lists should remain valid input")
+	assert_equal(listed_api_error, nil, "Fabric API version lists should not fail validation")
+	local invalid_data, invalid_data_error = project.validate(vim.tbl_extend("force", fabric, { language = "kotlin", fabric_version_data = "invalid" }))
+	assert_equal(invalid_data, nil, "non-table Fabric version data should be rejected structurally")
+	assert_equal(invalid_data_error, { code = "invalid_type", field = "fabric_version_data" }, "invalid Fabric version data should not throw")
 end
 
 local function test_project_generation_results()
@@ -2108,14 +2364,125 @@ local function test_noninteractive_fabric_kotlin_generation()
 	vim.fn.mkdir(client_directory, "p")
 	generation_spec.directory = client_directory
 	generation_spec.side = "client"
+	generation_spec.client_mixins = false
 	local client_ok, client_err = generate_project(generation_spec)
 	assert_equal(client_ok, true, "client-only Fabric Kotlin generation should succeed")
 	assert_equal(client_err, nil, "client-only Fabric Kotlin generation should not return an error")
-	assert_equal(vim.fn.filereadable(client_directory .. "/src/client/kotlin/com/example/example/mixin/ExampleModMixin.kt"), 1, "client-only mixins should use the client source set")
+	assert_equal(vim.fn.filereadable(client_directory .. "/src/client/kotlin/com/example/example/mixin/client/ExampleModClientMixin.kt"), 1, "client-only mixins should use a separate client package and source set")
 	assert_equal(vim.fn.filereadable(client_directory .. "/src/main/kotlin/com/example/example/mixin/ExampleModMixin.kt"), 0, "client-only mixins should not use the main source set")
 	vim.fn.delete(client_directory, "rf")
 	gradle.generate_gradlew = original_generate_gradlew
 	vim.fn.input = original_input
+end
+
+local function test_fabric_advanced_generation_options()
+	local original_generate_gradlew = gradle.generate_gradlew
+	gradle.generate_gradlew = function() return true end
+	local base = {
+		platform = "fabric",
+		build_system = "gradle",
+		group_id = "com.example",
+		artifact_id = "advanced",
+		package_name = "com.example.advanced",
+		main_class = "AdvancedMod",
+		plugin_version = "1.0.0",
+		side = "both",
+		use_mixins = true,
+	}
+
+	local yarn_directory = vim.fn.tempname()
+	vim.fn.mkdir(yarn_directory, "p")
+	local yarn_ok, yarn_err = generate_project(vim.tbl_extend("force", vim.deepcopy(base), {
+		directory = yarn_directory,
+		minecraft_version = "1.21.1",
+		language = "java",
+		use_official_mappings = false,
+		yarn_version = "1.21.1+build.3",
+		use_fabric_api = false,
+		split_sources = false,
+		client_mixins = true,
+		generate_datagen = true,
+		fabric_version_data = {
+			loader = "0.16.14",
+			fabric_api = "0.116.15+1.21.1",
+			yarn = nil,
+			loom_version = "1.10.5",
+			gradle_version = "8.12.1",
+		},
+	}))
+	assert_equal(yarn_ok, true, "Yarn Fabric generation should succeed")
+	assert_equal(yarn_err, nil, "Yarn Fabric generation should not return an error")
+	local yarn_build = read_file(yarn_directory .. "/build.gradle")
+	assert_truthy(yarn_build:find("net.fabricmc:yarn:${project.yarn_version}:v2", 1, true) ~= nil, "Yarn projects should declare the selected mappings")
+	assert_truthy(yarn_build:find("fabric-api", 1, true) == nil, "Fabric API should be removable from native projects")
+	assert_truthy(yarn_build:find("splitEnvironmentSourceSets", 1, true) == nil, "split source configuration should be optional")
+	assert_truthy(yarn_build:find("configureDataGeneration", 1, true) == nil, "datagen should be disabled when Fabric API is disabled")
+	assert_equal(vim.fn.filereadable(yarn_directory .. "/src/main/java/com/example/advanced/AdvancedModClient.java"), 1, "unsplit client sources should use the main source set")
+	local yarn_metadata = vim.json.decode(read_file(yarn_directory .. "/src/main/resources/fabric.mod.json"))
+	assert_equal(yarn_metadata.depends["fabric-api"], nil, "Fabric metadata should omit disabled Fabric API")
+	assert_equal(yarn_metadata.entrypoints["fabric-datagen"], nil, "Fabric metadata should omit datagen when API is disabled")
+	vim.fn.delete(yarn_directory, "rf")
+
+	local modern_directory = vim.fn.tempname()
+	vim.fn.mkdir(modern_directory, "p")
+	local modern_ok, modern_err = generate_project(vim.tbl_extend("force", vim.deepcopy(base), {
+		directory = modern_directory,
+		minecraft_version = "26.1.2",
+		language = "kotlin",
+		use_official_mappings = false,
+		use_fabric_api = true,
+		split_sources = true,
+		client_mixins = true,
+		generate_datagen = true,
+		fabric_version_data = {
+			loader = "0.19.3",
+			fabric_api = "0.155.2+26.1.2",
+			yarn = nil,
+			kotlin_loader = "1.13.13+kotlin.2.4.10",
+			loom_version = "1.17.17",
+			gradle_version = "9.6.1",
+		},
+	}))
+	assert_equal(modern_ok, true, "26.1 Fabric generation should succeed without Yarn")
+	assert_equal(modern_err, nil, "26.1 Fabric generation should not return an error")
+	local modern_build = read_file(modern_directory .. "/build.gradle.kts")
+	assert_truthy(modern_build:find('id("net.fabricmc.fabric-loom") version "1.17.17"', 1, true) ~= nil, "26.1 should use the renamed Loom plugin")
+	assert_truthy(modern_build:find("modImplementation", 1, true) == nil, "26.1 should use implementation dependency configurations")
+	assert_truthy(modern_build:find("mappings(", 1, true) == nil, "26.1 should not emit a Yarn or legacy mappings dependency")
+	assert_truthy(modern_build:find("val targetJavaVersion = 25", 1, true) ~= nil, "26.1 should target Java 25")
+	assert_equal(vim.fn.filereadable(modern_directory .. "/src/main/resources/advanced.mixins.json"), 1, "split projects should retain a main Mixin config")
+	assert_equal(vim.fn.filereadable(modern_directory .. "/src/client/resources/advanced.client.mixins.json"), 1, "split projects should generate a client Mixin config")
+	assert_equal(vim.fn.filereadable(modern_directory .. "/src/client/kotlin/com/example/advanced/mixin/client/AdvancedModClientMixin.kt"), 1, "split projects should generate a separate client Mixin source")
+	assert_truthy(read_file(modern_directory .. "/src/main/kotlin/com/example/advanced/mixin/AdvancedModMixin.kt"):find("net.minecraft.world.entity.Entity", 1, true) ~= nil, "26.1 should use the effective Mojang mappings for generated Mixins")
+	local modern_metadata = vim.json.decode(read_file(modern_directory .. "/src/main/resources/fabric.mod.json"))
+	assert_equal(modern_metadata.depends.java, ">=25", "26.1 metadata should require Java 25")
+	assert_equal(modern_metadata.mixins[2].environment, "client", "client Mixin metadata should be environment-scoped")
+	vim.fn.delete(modern_directory, "rf")
+
+	local minecraft_dev = require("minecraft-dev")
+	local original_side = minecraft_dev.config.defaults.fabric.side
+	minecraft_dev.config.defaults.fabric.side = "server"
+	local server_directory = vim.fn.tempname()
+	vim.fn.mkdir(server_directory, "p")
+	local server_spec = vim.tbl_extend("force", vim.deepcopy(base), {
+		directory = server_directory,
+		minecraft_version = "1.21.1",
+		language = "java",
+		use_fabric_api = false,
+		fabric_version_data = {
+			loader = "0.16.14",
+			loom_version = "1.10.5",
+			gradle_version = "8.12.1",
+		},
+	})
+	server_spec.side = nil
+	local server_ok, server_err = generate_project(server_spec)
+	minecraft_dev.config.defaults.fabric.side = original_side
+	assert_equal(server_ok, true, "configured server-side Fabric defaults should generate")
+	assert_equal(server_err, nil, "configured server-side Fabric defaults should not fail")
+	assert_equal(vim.fn.isdirectory(server_directory .. "/src/client"), 0, "server-side defaults should not derive client sources or Mixins")
+	vim.fn.delete(server_directory, "rf")
+	gradle.generate_gradlew = original_generate_gradlew
 end
 
 local function test_config_normalize_legacy_debug()
@@ -2128,12 +2495,14 @@ local function test_config_normalize_nested_override()
 		logging = { debug = false },
 		defaults = {
 			paper = { version = "1.20.6" },
+			fabric = { cache_ttl = -1 },
 		},
 	})
 
 	assert_equal(normalized.defaults.paper.version, "1.20.6", "nested defaults should override cleanly")
 	assert_equal(normalized.defaults.paper.language, "java", "paper language default should stay intact")
 	assert_equal(normalized.defaults.fabric.language, "java", "unrelated defaults should stay intact")
+	assert_equal(normalized.defaults.fabric.cache_ttl, config.default_config.defaults.fabric.cache_ttl, "invalid Fabric cache TTLs should restore the configured default")
 	assert_equal(normalized.prompts.paper.select_language, "Select language", "paper prompts should remain present")
 	assert_equal(normalized.prompts.fabric.select_language, "Select language", "default prompts should remain present")
 end
@@ -2278,6 +2647,7 @@ local function run()
 	test_custom_wrapper_version_finalizer()
 	test_custom_finalizer_failure_cleanup()
 	test_custom_finalizer_cancellation()
+	test_custom_fabric_version_wizard()
 	test_fabric_online_version_parser()
 	test_forge_family_generation()
 	test_additional_plugin_platforms()
@@ -2294,6 +2664,7 @@ local function run()
 	test_noninteractive_paper_generation()
 	test_noninteractive_fabric_generation()
 	test_noninteractive_fabric_kotlin_generation()
+	test_fabric_advanced_generation_options()
 	test_config_normalize_legacy_debug()
 	test_config_normalize_nested_override()
 	test_resolve_path_with_default()
