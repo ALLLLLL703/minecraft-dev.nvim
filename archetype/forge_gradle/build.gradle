@@ -1,0 +1,49 @@
+${MIXIN_BUILDSCRIPT}plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'java'
+    id 'net.minecraftforge.gradle' version '[6.0.36,6.2)'
+${PARCHMENT_PLUGIN}}
+${MIXIN_APPLY}
+group = ${GROUP_ID}
+version = ${MOD_VERSION}
+base { archivesName = ${MOD_ID_QUOTED} }
+
+java { toolchain.languageVersion = JavaLanguageVersion.of(${JAVA_VERSION}) }
+
+minecraft {
+    mappings ${MAPPINGS}
+    copyIdeResources = true
+${REOBF_PROPERTY}    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+${RUN_MODS}        }
+        client {}
+        server { args '--nogui' }
+        data {
+            workingDirectory project.file('run-data')
+            args '--mod', ${MOD_ID_QUOTED}, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+        }
+    }
+}
+${MIXIN_BLOCK}
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories { mavenCentral() }
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:${MINECRAFT_VERSION}-${FORGE_VERSION}'
+${MIXIN_DEPENDENCY}${MODERN_DEPENDENCY}}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes('Specification-Title': ${MOD_ID_QUOTED}, 'Specification-Vendor': ${AUTHORS},
+            'Specification-Version': '1', 'Implementation-Title': project.name,
+            'Implementation-Version': project.jar.archiveVersion, 'Implementation-Vendor': ${AUTHORS})
+    }
+${REOBF_JAR}}
+
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+${MERGED_SOURCES}

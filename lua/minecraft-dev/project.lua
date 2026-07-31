@@ -106,10 +106,22 @@ function M.validate(spec)
 		if spec.language ~= "java" then
 			return nil, validation_error("unsupported_language", "language")
 		end
-		if type(spec.loader_version) ~= "string" or spec.loader_version == "" then
+		if spec.platform == "neoforge" and (type(spec.loader_version) ~= "string" or spec.loader_version == "") then
 			return nil, validation_error("missing_field", "loader_version")
 		end
-		if not spec.artifact_id:match("^[a-z][a-z0-9_]+$") then
+		if spec.platform == "forge" and spec.loader_version ~= nil
+			and (type(spec.loader_version) ~= "string" or not spec.loader_version:match("^%d+%.%d+%.%d+$"))
+		then return nil, validation_error("invalid_version", "loader_version") end
+		if spec.platform == "forge" and (require("minecraft-dev.version").compare(spec.minecraft_version, "1.16") or -1) < 0 then
+			return nil, validation_error("unsupported_version", "minecraft_version")
+		end
+		if spec.platform == "forge" and (require("minecraft-dev.version").compare(spec.minecraft_version, "1.21.1") or 1) > 0 then
+			return nil, validation_error("unsupported_version", "minecraft_version")
+		end
+		if spec.platform == "forge" and spec.parchment_version ~= nil
+			and (type(spec.parchment_version) ~= "string" or not spec.parchment_version:match("^[%w_.-]+$"))
+		then return nil, validation_error("invalid_version", "parchment_version") end
+		if not spec.artifact_id:match("^[a-z][a-z0-9_]+$") or #spec.artifact_id > 64 then
 			return nil, validation_error("invalid_mod_id", "artifact_id")
 		end
 	end
@@ -307,6 +319,25 @@ function M.generate_async(spec, callback)
 		end)
 		if not started then
 			finish({ status = "failed", error = { code = "version_resolution_failed", detail = fetch_operation } })
+			return operation
+		end
+		if operation.status == "pending" and not child then child = fetch_operation end
+	elseif normalized.platform == "forge" and not normalized.loader_version then
+		local started, fetch_operation, fetch_error = pcall(
+			require("minecraft-dev.generators.forge.version_data").resolve,
+			normalized.minecraft_version,
+			function(data, err)
+				if not data then
+					if err and err.code == "cancelled" then finish({ status = "cancelled" })
+					else finish({ status = "failed", error = { code = "version_resolution_failed", detail = err } }) end
+					return
+				end
+				normalized.loader_version = data.forge
+				run_generator()
+			end
+		)
+		if not started or not fetch_operation then
+			finish({ status = "failed", error = { code = "version_resolution_failed", detail = started and fetch_error or fetch_operation } })
 			return operation
 		end
 		if operation.status == "pending" and not child then child = fetch_operation end

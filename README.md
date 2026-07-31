@@ -150,8 +150,13 @@ BungeeCord and Waterfall target Java 8; Kotlin projects shade the Kotlin runtime
 Sponge derives Java 16/17/21 from API 8/9-10/11+, uses SpongeGradle metadata for Gradle, and writes
 `META-INF/sponge_plugins.json` for Maven.
 
-Forge and NeoForge use Gradle and require `loader_version`. They also accept `parchment_version`, `use_mixins`,
-`plugin_name`, `plugin_version`, `description`, and `license`.
+Forge and NeoForge use Gradle. NeoForge requires `loader_version`; Forge resolves the newest compatible version from
+the official Maven metadata when `loader_version` is omitted. An explicit Forge `loader_version` bypasses that lookup,
+so callers are responsible for supplying a compatible version. This ForgeGradle 6 generator supports Minecraft 1.16
+through 1.21.1 and also accepts
+`parchment_version`, `use_mixins`, `plugin_name`, `plugin_version`, `description`, `authors`, `website`, `update_url`,
+and `license`. Generated Forge projects include version-specific entry and Config sources, a compilable Mixin example
+when enabled, a license file, and client/server/data/build runs in `.nvim/minecraft-dev-runs.json`.
 
 Architectury uses Gradle and requires `fabric_loader_version`, `fabric_api_version`, `forge_version`, and
 `architectury_api_version`. It generates `common`, `fabric`, and `forge` modules.
@@ -201,6 +206,8 @@ Supported finalizers are `run_gradle_tasks`, `import_gradle_project`, `import_ma
 `add_maven_run`, and `git_add_all`. Import finalizers emit `User MinecraftDevProjectGenerated`; reusable run definitions
 are written to `.nvim/minecraft-dev-runs.json`. External commands remain asynchronous, and template generation only
 becomes `generated` after every finalizer succeeds.
+Forge's `genIntellijRuns` task is translated into Neovim client, server, and data Gradle runs instead of generating
+IntelliJ configuration files.
 
 Fabric generation refreshes Loader and Yarn versions from Fabric Meta and the Fabric API version from Modrinth before
 generation. Successful responses are cached under Neovim's cache directory; network or response failures fall back to
@@ -236,8 +243,8 @@ nvim --headless --clean -u NONE \
   "+lua dofile('test/integration_build_matrix.lua')"
 ```
 
-The matrix covers Paper, Velocity, BungeeCord, Waterfall, Sponge, Fabric Java/Kotlin with Mixin and datagen, Forge,
-NeoForge, and Architectury. It
+The matrix covers Paper, Velocity, BungeeCord, Waterfall, Sponge, Fabric Java/Kotlin with Mixin and datagen, Forge
+1.16.5/1.20.1/1.20.6/1.21.1, NeoForge, and Architectury. It
 reuses `~/.gradle` and `~/.m2/repository` by default and writes a JSON report to a temporary path. Use
 `MINECRAFT_DEV_MATRIX_CASES=paper-java-gradle,fabric-kotlin-gradle` to select cases,
 `MINECRAFT_DEV_MATRIX_TIMEOUT_MS` to change each build timeout, `MINECRAFT_DEV_MATRIX_REPORT` to choose the report,

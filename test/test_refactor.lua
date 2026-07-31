@@ -10,6 +10,7 @@ local custom_templates = require("minecraft-dev.custom")
 local custom_evaluator = require("minecraft-dev.custom.evaluator")
 local custom_property_values = require("minecraft-dev.custom.property_values")
 local fabric_version_data = require("minecraft-dev.generators.fabric.version_data")
+local forge_version_data = require("minecraft-dev.generators.forge.version_data")
 local plugin_version_data = require("minecraft-dev.generators.plugin.version_data")
 local gradle = require("minecraft-dev.util.gradle")
 local version = require("minecraft-dev.version")
@@ -366,12 +367,15 @@ local function test_build_matrix_definition()
 	assert_equal(covered_builds.gradle, true, "build matrix should cover Gradle")
 	assert_equal(covered_builds.maven, true, "build matrix should cover Maven")
 	local fabric_options_covered = false
+	local forge_versions_covered = {}
 	for _, case in ipairs(matrix.cases) do
 		if case.spec.platform == "fabric" and case.spec.use_mixins and case.spec.generate_datagen then
 			fabric_options_covered = true
 		end
+		if case.spec.platform == "forge" then forge_versions_covered[case.spec.minecraft_version] = true end
 	end
 	assert_equal(fabric_options_covered, true, "build matrix should cover Fabric Mixin and datagen")
+	assert_equal(vim.tbl_count(forge_versions_covered) >= 3, true, "build matrix should cover at least three Forge version breakpoints")
 end
 
 local function generate_project(spec)
@@ -971,6 +975,15 @@ java
 		"8.8\n",
 		"set directives in selected conditions should update following template content"
 	)
+	assert_equal(
+		custom_evaluator.render({
+			FIRST = false,
+			SECOND = true,
+			VERSIONS = { forge = "52.1.0" },
+		}, "#set ($SELECTED = $FIRST ||\n    ($SECOND && ${VERSIONS.forge.compareTo($semver.parse(\"52.0.9\"))} >= 0))\n#if ($SELECTED)\nselected\n#end\n"),
+		"selected\n",
+		"multiline directives should be joined before Velocity evaluation"
+	)
 end
 
 local function test_custom_archive_provider()
@@ -1094,18 +1107,27 @@ local function test_custom_run_config_finalizers()
 		files = { { template = "empty.ft", destination = "README.txt" } },
 		finalizers = {
 			{ type = "import_gradle_project" },
+			{ type = "run_gradle_tasks", tasks = { "genIntellijRuns" } },
 			{ type = "add_gradle_run", name = "Build", tasks = { "build" } },
 			{ type = "add_maven_run", name = "Package", goals = { "package" } },
 		},
 	}))
-	local result, err = generate_template({ provider = "local", source = template_root, directory = destination })
+	local result, err = generate_template({
+		provider = "local",
+		source = template_root,
+		directory = destination,
+		properties = { VERSIONS = { minecraft = "1.21.1", forge = "52.1.0" } },
+	})
 	assert_truthy(result ~= nil, "run config finalizers should complete")
 	assert_equal(err, nil, "run config finalizers should not return an error")
 	local runs = vim.json.decode(read_file(destination .. "/.nvim/minecraft-dev-runs.json"))
-	assert_equal(runs[1].type, "gradle", "Gradle run finalizer should persist its type")
-	assert_equal(runs[1].args, { "build" }, "Gradle run finalizer should persist tasks")
-	assert_equal(runs[2].type, "maven", "Maven run finalizer should persist its type")
-	assert_equal(runs[2].args, { "package" }, "Maven run finalizer should persist goals")
+	assert_equal(runs[1].args, { "runClient" }, "genIntellijRuns should map the Forge client run to Neovim metadata")
+	assert_equal(runs[2].args, { "runServer" }, "genIntellijRuns should map the Forge server run to Neovim metadata")
+	assert_equal(runs[3].args, { "runData" }, "genIntellijRuns should map the Forge data run to Neovim metadata")
+	assert_equal(runs[4].type, "gradle", "Gradle run finalizer should persist its type")
+	assert_equal(runs[4].args, { "build" }, "Gradle run finalizer should persist tasks")
+	assert_equal(runs[5].type, "maven", "Maven run finalizer should persist its type")
+	assert_equal(runs[5].args, { "package" }, "Maven run finalizer should persist goals")
 	assert_equal(imported_root, destination, "import finalizers should receive the committed destination")
 	vim.api.nvim_del_augroup_by_id(import_group)
 	vim.fn.delete(template_root, "rf")
@@ -1124,18 +1146,18 @@ local function test_custom_wrapper_version_finalizer()
 		files = { { template = "wrapper.ft", destination = "gradle/wrapper/gradle-wrapper.properties" } },
 		finalizers = { { type = "run_gradle_tasks", tasks = { "wrapper" } } },
 	}))
-	local original_system = vim.system
-	local command
-	vim.system = function(args, _, callback)
-		command = args
-		callback({ code = 0, stdout = "", stderr = "" })
-		return { kill = function() end }
+	local original_generate_gradlew = gradle.generate_gradlew
+	local wrapper_version
+	gradle.generate_gradlew = function(_, _, version)
+		wrapper_version = version
+		local result = { status = "generated" }
+		return { status = "generated", result = result, on_complete = function(callback) callback(result) end, cancel = function() end }
 	end
 	local result, err = generate_template({ provider = "local", source = template_root, directory = destination })
-	vim.system = original_system
+	gradle.generate_gradlew = original_generate_gradlew
 	assert_truthy(result ~= nil, "Gradle wrapper finalizer fixture should generate")
 	assert_equal(err, nil, "Gradle wrapper finalizer fixture should not fail")
-	assert_equal(command, { "gradle", "wrapper", "--gradle-version", "8.8" }, "wrapper finalizers should preserve the template Gradle version")
+	assert_equal(wrapper_version, "8.8", "wrapper finalizers should preserve the template Gradle version")
 	vim.fn.delete(template_root, "rf")
 	vim.fn.delete(destination, "rf")
 end
@@ -1612,6 +1634,188 @@ local function test_forge_family_generation()
 	gradle.generate_gradlew = original_generate_gradlew
 end
 
+local function forge_catalog_fixture()
+	local coordinates = {
+		"1.16.5-36.2.42",
+		"1.17.1-37.1.1",
+		"1.18.2-40.2.21",
+		"1.19.2-43.4.20",
+		"1.19.3-44.1.23",
+		"1.20.1-47.4.10",
+		"1.21.1-52.1.0",
+		"1.21.11-61.1.14",
+		"1.15.2-31.2.57",
+		"invalid",
+	}
+	for index = 1, 55 do table.insert(coordinates, "1.20.1-47.3." .. tostring(index)) end
+	local versions = {}
+	for _, coordinate in ipairs(coordinates) do table.insert(versions, "<version>" .. coordinate .. "</version>") end
+	return "<metadata><versioning><versions>" .. table.concat(versions) .. "</versions></versioning></metadata>"
+end
+
+local function test_forge_version_data_and_wizard()
+	local catalog, parse_error = forge_version_data.parse(forge_catalog_fixture())
+	assert_equal(parse_error, nil, "valid Forge Maven metadata should parse")
+	assert_equal(catalog.minecraft, { "1.21.1", "1.20.1", "1.19.3", "1.19.2", "1.18.2", "1.17.1", "1.16.5" }, "Forge Minecraft versions should be supported and newest first")
+	assert_equal(#catalog.forge["1.20.1"], 50, "Forge candidates should retain the upstream 50-version limit")
+	assert_equal(catalog.forge["1.20.1"][1], "47.4.10", "Forge candidates should use numeric descending order")
+	assert_equal(forge_version_data.derive("1.20.6", "50.1.17"), {
+		minecraft = "1.20.6", forge = "50.1.17", minecraftNext = "1.21", forgeSpec = "50",
+	}, "Forge model fields should match the upstream derivations")
+	assert_equal(select(1, forge_version_data.parse("<metadata/>")), nil, "empty Forge metadata should fail")
+
+	local process_callback
+	local requested_command
+	local killed = false
+	local cancelled
+	local operation = forge_version_data.load(function(_, err) cancelled = err end, function(command, _, callback)
+		requested_command = command
+		process_callback = callback
+		return { kill = function() killed = true end }
+	end)
+	operation.cancel()
+	assert_equal(killed, true, "Forge cancellation should terminate curl")
+	process_callback({ code = 143, stderr = "cancelled" })
+	vim.wait(1000, function() return operation.status == "cancelled" end, 10)
+	assert_equal(cancelled.code, "cancelled", "Forge cancellation should remain structured")
+	assert_truthy(table.concat(requested_command, " "):find("https://maven.minecraftforge.net/", 1, true) ~= nil, "Forge versions should use the canonical Maven endpoint")
+	assert_truthy(vim.tbl_contains(requested_command, "--location"), "Forge metadata requests should follow redirects")
+	local reentrant_callback
+	local reentrant_count = 0
+	local reentrant_operation
+	reentrant_operation = forge_version_data.load(function()
+		reentrant_count = reentrant_count + 1
+		reentrant_operation.cancel()
+	end, function(_, _, callback)
+		reentrant_callback = callback
+		return { kill = function() end }
+	end)
+	reentrant_callback({ code = 0, stdout = forge_catalog_fixture(), stderr = "" })
+	vim.wait(1000, function() return reentrant_operation.status ~= "pending" end, 10)
+	assert_equal(reentrant_operation.status, "generated", "Forge version callbacks should observe the terminal operation state")
+	assert_equal(reentrant_count, 1, "Forge version callback re-entry should not complete twice")
+
+	local minecraft_dev = require("minecraft-dev")
+	local wizard = require("minecraft-dev.custom.wizard")
+	local original_list_templates = minecraft_dev.list_templates
+	local original_generate_template = minecraft_dev.generate_template
+	local original_load = forge_version_data.load
+	local original_input = vim.ui.input
+	local original_select = vim.ui.select
+	local generated_properties
+	local input_count = 0
+	local inputs = { "/tmp/forge-wizard", "forge-wizard" }
+	minecraft_dev.list_templates = function(options)
+		options.callback({ {
+			label = "Forge", group = "mod", descriptor = "forge/.mcdev.template.json",
+			definition = { properties = { { name = "VERSIONS", type = "forge_versions", limit = 3 } } },
+		} }, nil)
+		return { status = "generated", cancel = function() end }
+	end
+	minecraft_dev.generate_template = function(options)
+		generated_properties = options.properties
+		local result = { status = "generated" }
+		options.callback(result)
+		return { status = "generated", result = result, cancel = function() end }
+	end
+	forge_version_data.load = function(callback)
+		callback(catalog, nil)
+		return { status = "generated", cancel = function() end }, nil
+	end
+	vim.ui.input = function(_, callback) input_count = input_count + 1 callback(table.remove(inputs, 1)) end
+	vim.ui.select = function(items, options, callback)
+		if type(items[1]) == "table" then callback(items[1])
+		elseif options.prompt == require("minecraft-dev").config.prompts.forge.minecraft_version then callback("1.20.1")
+		else callback(items[1]) end
+	end
+	local wizard_operation = wizard.run()
+	minecraft_dev.list_templates = original_list_templates
+	minecraft_dev.generate_template = original_generate_template
+	forge_version_data.load = original_load
+	vim.ui.input = original_input
+	vim.ui.select = original_select
+	assert_equal(wizard_operation.status, "generated", "Forge wizard should generate without JSON input")
+	assert_equal(input_count, 2, "Forge versions should only require directory and project name text input")
+	assert_equal(generated_properties.VERSIONS.minecraft, "1.20.1", "Forge wizard should retain the selected Minecraft version")
+	assert_equal(generated_properties.VERSIONS.forge, "47.4.10", "Forge wizard should select the newest compatible Forge")
+end
+
+local function test_forge_versioned_generation()
+	local original_generate_gradlew = gradle.generate_gradlew
+	local wrapper_versions = {}
+	gradle.generate_gradlew = function(_, _, wrapper_version)
+		table.insert(wrapper_versions, wrapper_version)
+		return true
+	end
+	local cases = {
+		{ minecraft = "1.16.5", forge = "36.2.42", marker = "LogManager", pack = 6 },
+		{ minecraft = "1.17.1", forge = "37.1.1", marker = "fmlserverevents", pack = 7 },
+		{ minecraft = "1.18.2", forge = "40.2.21", marker = "LogUtils", pack = 9 },
+		{ minecraft = "1.19.2", forge = "43.4.20", marker = "DeferredRegister", pack = 10 },
+		{ minecraft = "1.19.3", forge = "44.1.23", marker = "CreativeModeTabEvent", pack = 10 },
+		{ minecraft = "1.20", forge = "46.0.14", marker = "ModLoadingContext", pack = 15 },
+		{ minecraft = "1.20.1", forge = "47.4.10", marker = "ModLoadingContext.get()", pack = 15 },
+		{ minecraft = "1.20.6", forge = "50.1.17", marker = "FMLJavaModLoadingContext context", pack = 32 },
+		{ minecraft = "1.21.1", forge = "52.1.0", marker = "FMLJavaModLoadingContext context", pack = 34 },
+	}
+	for _, case in ipairs(cases) do
+		local directory = vim.fn.tempname()
+		vim.fn.mkdir(directory, "p")
+		local ok, err = generate_project({
+			platform = "forge", build_system = "gradle", minecraft_version = case.minecraft,
+			loader_version = case.forge, directory = directory, group_id = "com.example",
+			artifact_id = "examplemod", package_name = "com.example.examplemod", main_class = "ExampleMod",
+			language = "java", plugin_version = "1.0.0", plugin_name = "Example Mod", license = "MIT",
+			authors = { "Alice", "Bob" }, website = "https://example.com", update_url = "https://example.com/update.json",
+			description = "Example ${description}", use_mixins = true,
+		})
+		assert_equal(ok, true, "Forge " .. case.minecraft .. " generation should succeed")
+		assert_equal(err, nil, "Forge " .. case.minecraft .. " generation should not return an error")
+		local source = read_file(directory .. "/src/main/java/com/example/examplemod/ExampleMod.java")
+		assert_truthy(source:find(case.marker, 1, true) ~= nil, "Forge " .. case.minecraft .. " should select its entry template")
+		local pack = vim.json.decode(read_file(directory .. "/src/main/resources/pack.mcmeta"))
+		assert_equal(pack.pack.pack_format, case.pack, "Forge " .. case.minecraft .. " should select its pack format")
+		if (version.compare(case.minecraft, "1.20.3") or -1) < 0 then
+			assert_truthy(read_file(directory .. "/build.gradle"):find('mods { "examplemod" {', 1, true) ~= nil, "Forge run mod IDs should be quoted Groovy names")
+		end
+		local expects_config = (version.compare(case.minecraft, "1.20.1") or -1) >= 0
+		assert_equal(vim.fn.filereadable(directory .. "/src/main/java/com/example/examplemod/Config.java"), expects_config and 1 or 0, "Forge Config should follow its version boundary")
+		assert_equal(vim.fn.filereadable(directory .. "/src/main/java/com/example/examplemod/mixin/ExampleMixin.java"), 1, "Forge should generate a Mixin source")
+		assert_equal(vim.fn.filereadable(directory .. "/LICENSE.txt"), 1, "Forge should generate a license file")
+		local runs = vim.json.decode(read_file(directory .. "/.nvim/minecraft-dev-runs.json"))
+		assert_equal(#runs, 4, "Forge should generate client, server, data, and build runs")
+		if case.minecraft == "1.21.1" then
+			assert_truthy(read_file(directory .. "/src/main/java/com/example/examplemod/Config.java"):find("ResourceLocation.parse", 1, true) ~= nil, "Forge 1.21 should use the new Config API")
+			local manifest = read_file(directory .. "/src/main/resources/META-INF/mods.toml")
+			for _, marker in ipairs({ "updateJSONURL", "displayURL", 'authors="Alice, Bob"', 'description="Example ${description}"', 'modId="minecraft"', 'versionRange="[1.21.1,1.22)"' }) do
+				assert_truthy(manifest:find(marker, 1, true) ~= nil, "Forge metadata should include " .. marker)
+			end
+		end
+		vim.fn.delete(directory, "rf")
+	end
+	local original_resolve = forge_version_data.resolve
+	forge_version_data.resolve = function(minecraft, callback)
+		callback(forge_version_data.derive(minecraft, "47.4.10"), nil)
+		return { status = "generated", cancel = function() end }, nil
+	end
+	local resolved_directory = vim.fn.tempname()
+	vim.fn.mkdir(resolved_directory, "p")
+	local resolved_ok, resolved_error = generate_project({
+		platform = "forge", build_system = "gradle", minecraft_version = "1.20.1",
+		directory = resolved_directory, group_id = "com.example", artifact_id = "resolvedmod",
+		package_name = "com.example.resolvedmod", main_class = "ResolvedMod", language = "java",
+	})
+	forge_version_data.resolve = original_resolve
+	assert_equal(resolved_ok, true, "Forge generation should resolve an omitted loader version")
+	assert_equal(resolved_error, nil, "Forge automatic version resolution should not fail")
+	assert_truthy(read_file(resolved_directory .. "/build.gradle"):find("1.20.1-47.4.10", 1, true) ~= nil, "resolved Forge coordinates should reach the build")
+	vim.fn.delete(resolved_directory, "rf")
+	gradle.generate_gradlew = original_generate_gradlew
+	local expected_wrappers = {}
+	for _ = 1, #cases + 1 do table.insert(expected_wrappers, "8.8") end
+	assert_equal(wrapper_versions, expected_wrappers, "Forge should use its supported wrapper version")
+end
+
 local function test_additional_plugin_platforms()
 	local expectations = {
 		bungeecord = { dependency = "bungeecord-api", metadata = "src/main/resources/bungee.yml" },
@@ -2050,6 +2254,25 @@ local function test_project_validation()
 	local invalid_data, invalid_data_error = project.validate(vim.tbl_extend("force", fabric, { language = "kotlin", fabric_version_data = "invalid" }))
 	assert_equal(invalid_data, nil, "non-table Fabric version data should be rejected structurally")
 	assert_equal(invalid_data_error, { code = "invalid_type", field = "fabric_version_data" }, "invalid Fabric version data should not throw")
+	local forge = vim.tbl_extend("force", valid, { platform = "forge", minecraft_version = "1.20.1", artifact_id = "examplemod" })
+	local dynamic_forge, dynamic_forge_error = project.validate(forge)
+	assert_truthy(dynamic_forge ~= nil, "Forge should allow dynamic loader resolution")
+	assert_equal(dynamic_forge_error, nil, "dynamic Forge validation should not fail")
+	local old_forge, old_forge_error = project.validate(vim.tbl_extend("force", forge, { minecraft_version = "1.15.2" }))
+	assert_equal(old_forge, nil, "Forge should reject Minecraft versions before 1.16")
+	assert_equal(old_forge_error, { code = "unsupported_version", field = "minecraft_version" }, "old Forge versions should fail structurally")
+	local invalid_forge, invalid_forge_error = project.validate(vim.tbl_extend("force", forge, { loader_version = "latest" }))
+	assert_equal(invalid_forge, nil, "Forge should reject malformed explicit loader versions")
+	assert_equal(invalid_forge_error, { code = "invalid_version", field = "loader_version" }, "malformed Forge versions should fail structurally")
+	local long_mod_id, long_mod_id_error = project.validate(vim.tbl_extend("force", forge, { artifact_id = "a" .. string.rep("b", 64) }))
+	assert_equal(long_mod_id, nil, "Forge should reject mod IDs longer than 64 characters")
+	assert_equal(long_mod_id_error, { code = "invalid_mod_id", field = "artifact_id" }, "long Forge mod IDs should fail structurally")
+	local future_forge, future_forge_error = project.validate(vim.tbl_extend("force", forge, { minecraft_version = "1.21.4" }))
+	assert_equal(future_forge, nil, "Forge should reject versions requiring the unimplemented ForgeGradle 7 template")
+	assert_equal(future_forge_error, { code = "unsupported_version", field = "minecraft_version" }, "future Forge versions should fail structurally")
+	local unsafe_parchment, unsafe_parchment_error = project.validate(vim.tbl_extend("force", forge, { parchment_version = "2024.11.17'" }))
+	assert_equal(unsafe_parchment, nil, "Forge should reject unsafe Parchment versions")
+	assert_equal(unsafe_parchment_error, { code = "invalid_version", field = "parchment_version" }, "unsafe Parchment versions should fail structurally")
 end
 
 local function test_project_generation_results()
@@ -2650,6 +2873,8 @@ local function run()
 	test_custom_fabric_version_wizard()
 	test_fabric_online_version_parser()
 	test_forge_family_generation()
+	test_forge_version_data_and_wizard()
+	test_forge_versioned_generation()
 	test_additional_plugin_platforms()
 	test_waterfall_version_resolution()
 	test_waterfall_resolution_lifecycle()

@@ -108,6 +108,9 @@ end
 
 evaluate = function(properties, expression)
 	expression = strip_parentheses(trim(expression))
+	if expression:sub(1, 2) == "${" and expression:sub(-1) == "}" then
+		expression = "$" .. expression:sub(3, -2)
+	end
 	local class_reference, subpackage_expression, class_field = expression:match("^%$([%w_%.]+)%.withSubPackage%((.-)%)%.([%w_]+)$")
 	if class_reference then
 		local class = resolve(properties, class_reference)
@@ -224,10 +227,39 @@ local function render_inline(properties, content)
 end
 
 local function parse_lines(content)
-	local lines = {}
+	local raw_lines = {}
 	for line, newline in content:gmatch("([^\n]*)(\n?)") do
 		if line == "" and newline == "" then break end
-		table.insert(lines, { text = line, newline = newline })
+		table.insert(raw_lines, { text = line, newline = newline })
+	end
+	local function parenthesis_balance(text)
+		local balance = 0
+		local quote
+		for index = 1, #text do
+			local character = text:sub(index, index)
+			if quote then
+				if character == quote and text:sub(index - 1, index - 1) ~= "\\" then quote = nil end
+			elseif character == '"' or character == "'" then quote = character
+			elseif character == "(" then balance = balance + 1
+			elseif character == ")" then balance = balance - 1 end
+		end
+		return balance
+	end
+	local lines = {}
+	local index = 1
+	while index <= #raw_lines do
+		local line = vim.deepcopy(raw_lines[index])
+		if line.text:match("^%s*#[%a]+%s*%(") then
+			local balance = parenthesis_balance(line.text)
+			while balance > 0 and index < #raw_lines do
+				index = index + 1
+				line.text = line.text .. " " .. trim(raw_lines[index].text)
+				line.newline = raw_lines[index].newline
+				balance = parenthesis_balance(line.text)
+			end
+		end
+		table.insert(lines, line)
+		index = index + 1
 	end
 	return lines
 end

@@ -185,3 +185,18 @@ require("minecraft-dev").generate({
 - 原生 Java/Yarn/API-off 与 Kotlin/26.1/split 两组合真实构建通过，报告为 `/tmp/minecraft-dev-p15-fabric.json`；实际官方 Fabric descriptor 的 Java/Yarn 与 Kotlin/26.1 两组合构建通过，报告为 `/tmp/minecraft-dev-p15-fabric-descriptors.json`。
 - 独立审查覆盖缓存、异步重入、26.1 mappings、client-only source set、顶层版本 override、warning 传播、fallback 排序、Kotlin DSL 转换和输入验证；修复后复审无 finding。
 - 已评估 `rest.nvim` 和通用 Neovim async 库；`rest.nvim` 面向 HTTP 文件交互并引入 Tree-sitter/LuaRocks 依赖，通用 async 库也不会减少固定请求的解析与领域筛选逻辑。继续复用 Neovim 0.12 内置 `vim.system`、`vim.json`、`vim.fs` 和现有 curl 生命周期，不增加运行时依赖。
+
+## 当前实现切片：P1.6 Forge
+
+- 参考 `minecraft-dev/templates@40b091262cff4130b9f61bc25de6cb9e2439d745` 的 Forge descriptor、七套入口类、两套 Config、Gradle、metadata 与 pack 模板，以及 `minecraft-dev/MinecraftDev@6da60db01112200c2b4c73795bdf18db17aa2023` 的 `ForgeVersion`、`ForgeVersionsCreatorProperty` 和 `ForgeVersions`。
+- `lua/minecraft-dev/generators/forge/version_data.lua` 负责 Forge Maven metadata 的纯解析、兼容版本分组、倒序排序、每个 Minecraft 版本最多 50 个 Forge 候选，以及可取消的异步加载；原生 API 未提供 `loader_version` 时也通过该模块解析所选 Minecraft 的最新兼容 Forge。
+- P1.6 的动态目录限制在已由固定上游 ForgeGradle 6 模板覆盖的 Minecraft 1.16–1.21.1；实时 Maven 中需要 ForgeGradle 7、新事件总线或 26.x 版本模型的后续版本不显示为可生成项，避免产生无法构建的项目。
+- `lua/minecraft-dev/custom/forge_versions.lua` 负责 `forge_versions` 的两级选择，输出上游同名的 `minecraft`、`forge`、`minecraftNext`、`forgeSpec` 字段；向导取消沿用 child operation 生命周期，不降级为手输 JSON。
+- 原生 Forge 生成与 NeoForge 共享入口解耦：Forge 专属构建、metadata、pack format、入口模板和 Config 选择放入 `lua/minecraft-dev/generators/forge/native.lua`，现有 `generators/forge.lua` 只负责平台分发并保留 NeoForge 当前行为。
+- 七个入口版本断点与 1.20.1/1.21 Config 使用 `archetype/forge_gradle/` 下的独立资源模板；生成器只做占位符替换和断点选择，不把完整 Java/Gradle 模板硬编码进 Lua。
+- Forge Gradle 配置使用实际 Minecraft、Forge、Java、metadata、Mixin 和版本范围，生成可编译的示例 Mixin 类、许可证文件、版本化 `pack.mcmeta`，并写入 Neovim 可消费的 client/server/data/build Gradle run metadata，作为 `genIntellijRuns` 的编辑器等价行为。
+- 快速回归覆盖 metadata 乱序与无效坐标、50 项限制、派生字段、选择取消、自动版本解析、七个入口断点、两套 Config、Mixin、完整 metadata、pack format 和 run metadata；构建矩阵至少覆盖 1.16.5、1.20.1、1.21.1 三个断点。
+- 已检索 `xml2lua.nvim`、`maven.nvim` 与 Neovim XML 解析实现；引入完整 XML parser 或 Maven 插件只为提取固定 `<version>` 文本会扩大依赖和攻击面，且不能替代 Forge 兼容分组规则。继续复用内置 Lua、`vim.system`、`vim.fs`、`vim.json` 和现有 curl 生命周期，不增加依赖。
+- 快速回归覆盖动态目录、50 项限制、取消与重入、官方向导、七套入口、1.20 精确边界、两套 Config、Mixin、metadata、许可证、pack format、run metadata、隔离 wrapper 和跨行 Velocity 指令；最终独立复审为 `No findings`。
+- 原生 Forge 1.16.5/36.2.42、1.20.1/47.4.10、1.21.1/52.1.0 三版本构建报告为 `/tmp/minecraft-dev-p16-forge.json`；Parchment 复验报告为 `/tmp/minecraft-dev-p16-forge-final.json`，1.20.6/50.1.17 专用构造器边界报告为 `/tmp/minecraft-dev-p16-forge-1.20.6.json`，均通过。
+- 实际官方 Forge descriptor 的 1.21.1/Mixin 项目通过隔离 wrapper 生成和真实构建，报告为 `/tmp/minecraft-dev-p16-forge-descriptor.json`；`genIntellijRuns` 被转换为 Neovim Client、Server、Data run，并保留模板声明的 Build run。

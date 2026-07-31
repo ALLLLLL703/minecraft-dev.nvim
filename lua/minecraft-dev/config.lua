@@ -76,6 +76,10 @@ M.default_config = {
 			use_mixins = "Generate mixin config and example?",
 			telescope_title = "select language",
 		},
+		forge = {
+			minecraft_version = "Select Minecraft version",
+			loader_version = "Select Forge version",
+		},
 	},
 	messages = {
 		project = {

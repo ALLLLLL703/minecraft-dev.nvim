@@ -1,52 +1,12 @@
 local M = {}
 local context = require("minecraft-dev.context")
 local fs = require("minecraft-dev.util.fs")
+local forge_native = require("minecraft-dev.generators.forge.native")
 local gradle = require("minecraft-dev.util.gradle")
 local path = require("minecraft-dev.util.path")
 
 local function quote(value)
 	return vim.json.encode(value)
-end
-
-local function forge_build(spec)
-	local librarian_plugin = spec.parchment_version and "\n    id 'org.parchmentmc.librarian.forgegradle' version '1.+'" or ""
-	local mappings = spec.parchment_version
-		and string.format("channel: 'parchment', version: '%s-%s'", spec.parchment_version, spec.minecraft_version)
-		or string.format("channel: 'official', version: '%s'", spec.minecraft_version)
-	local mixin_plugin = spec.use_mixins and "\n    id 'org.spongepowered.mixin' version '0.7-SNAPSHOT'" or ""
-	local mixin_config = spec.use_mixins and "\n" .. string.format([[mixin {
-    add sourceSets.main, '%s.refmap.json'
-    config '%s.mixins.json'
-}
-]], spec.artifact_id, spec.artifact_id) or ""
-	local mixin_dependency = spec.use_mixins and "\n    annotationProcessor 'org.spongepowered:mixin:0.8.7:processor'" or ""
-	return string.format([[plugins {
-    id 'java'
-    id 'net.minecraftforge.gradle' version '[6.0.36,6.2)'%s%s
-}
-group = %s
-version = %s
-base { archivesName = %s }
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
-minecraft {
-    mappings %s
-    runs {
-        client { workingDirectory project.file('run'); mods { %s { source sourceSets.main } } }
-        server { workingDirectory project.file('run-server'); args '--nogui'; mods { %s { source sourceSets.main } } }
-        data { workingDirectory project.file('run-data'); args '--mod', %s, '--all', '--output', file('src/generated/resources/'); mods { %s { source sourceSets.main } } }
-    }
-}
-repositories { mavenCentral() }
-dependencies {
-    minecraft 'net.minecraftforge:forge:%s-%s'%s
-}
-sourceSets.main.resources { srcDir 'src/generated/resources' }
-tasks.named('processResources', ProcessResources).configure {
-    var replaceProperties = [mod_id: %s, mod_version: project.version, minecraft_version: %s, loader_version: %s]
-    inputs.properties replaceProperties
-    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) { expand replaceProperties }
-}%s
-]], librarian_plugin, mixin_plugin, quote(spec.group_id), quote(spec.plugin_version or "1.0.0"), quote(spec.artifact_id), mappings, spec.artifact_id, spec.artifact_id, quote(spec.artifact_id), spec.artifact_id, spec.minecraft_version, spec.loader_version, mixin_dependency, quote(spec.artifact_id), quote(spec.minecraft_version), quote(spec.loader_version), mixin_config)
 end
 
 local function neoforge_build(spec)
@@ -129,6 +89,7 @@ end
 
 function M.run(_, project_path, _, spec, platform_name)
 	local platform = platform_name or spec.platform
+	if platform == "forge" then return forge_native.run(project_path, spec) end
 	local ctx = context.collect(spec)
 	ctx.path = project_path
 	ctx.package_path = ctx.package:gsub("%.", "/")

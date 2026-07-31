@@ -1,6 +1,7 @@
 local M = {}
 local evaluator = require("minecraft-dev.custom.evaluator")
 local fabric_versions = require("minecraft-dev.custom.fabric_versions")
+local forge_versions = require("minecraft-dev.custom.forge_versions")
 local property_values = require("minecraft-dev.custom.property_values")
 local notify = require("minecraft-dev.util.notify")
 
@@ -131,6 +132,17 @@ local function ask_property(descriptor, properties, callback, on_child, is_pendi
 			if not value then callback(err and err.code == "cancelled", err) return end
 			properties[descriptor.name] = value
 			callback(false, nil, warnings)
+		end)
+		if operation and operation.status == "pending" then on_child(operation) end
+		if select_error then callback(false, select_error) end
+		return operation
+	end
+	if descriptor.type == "forge_versions" then
+		local operation, select_error = forge_versions.select(descriptor, function(value, err)
+			if not is_pending() then return end
+			if not value then callback(err and err.code == "cancelled", err) return end
+			properties[descriptor.name] = value
+			callback(false)
 		end)
 		if operation and operation.status == "pending" then on_child(operation) end
 		if select_error then callback(false, select_error) end

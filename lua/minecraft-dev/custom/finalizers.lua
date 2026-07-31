@@ -1,13 +1,7 @@
 local M = {}
 local evaluator = require("minecraft-dev.custom.evaluator")
-local fs = require("minecraft-dev.util.fs")
-
-local function write_runs(project_root, runs)
-	if #runs == 0 then return end
-	local directory = vim.fs.joinpath(project_root, ".nvim")
-	fs.mkdir(directory)
-	fs.write_file(vim.fs.joinpath(directory, "minecraft-dev-runs.json"), vim.json.encode(runs) .. "\n")
-end
+local gradle = require("minecraft-dev.util.gradle")
+local run_metadata = require("minecraft-dev.util.run_metadata")
 
 local function command_for(finalizer, project_root)
 	if finalizer.type == "run_gradle_tasks" then
@@ -33,6 +27,39 @@ local function command_for(finalizer, project_root)
 	end
 end
 
+local function wrapper_version(project_root)
+	local properties = vim.fs.joinpath(project_root, "gradle", "wrapper", "gradle-wrapper.properties")
+	if vim.fn.filereadable(properties) ~= 1 then return nil end
+	local content = table.concat(vim.fn.readfile(properties), "\n")
+	return content:match("gradle%-([%w%.+_-]+)%-%a+%.zip")
+end
+
+local function is_wrapper_finalizer(finalizer)
+	return finalizer.type == "run_gradle_tasks"
+		and type(finalizer.tasks) == "table"
+		and #finalizer.tasks == 1
+		and finalizer.tasks[1] == "wrapper"
+end
+
+local function collect_gradle_tasks(descriptor, runs, translate_ide_runs)
+	local executable_tasks = {}
+	for _, task in ipairs(descriptor.tasks or {}) do
+		if task == "genIntellijRuns" and translate_ide_runs then
+			vim.list_extend(runs, {
+				{ type = "gradle", name = "Forge Client", args = { "runClient" } },
+				{ type = "gradle", name = "Forge Server", args = { "runServer" } },
+				{ type = "gradle", name = "Forge Data", args = { "runData" } },
+			})
+		else
+			table.insert(executable_tasks, task)
+		end
+	end
+	if #executable_tasks == 0 then return nil end
+	local executable = vim.deepcopy(descriptor)
+	executable.tasks = executable_tasks
+	return executable
+end
+
 function M.emit_imports(project_root, descriptors, properties)
 	for _, descriptor in ipairs(descriptors or {}) do
 		if (descriptor.type == "import_gradle_project" or descriptor.type == "import_maven_project")
@@ -55,6 +82,8 @@ function M.execute(project_root, descriptors, properties, callback)
 	callback = callback or function() end
 	local finalizers = {}
 	local runs = {}
+	local versions = properties and properties.VERSIONS
+	local translate_ide_runs = type(versions) == "table" and type(versions.forge) == "string"
 	for _, descriptor in ipairs(descriptors or {}) do
 		if not descriptor.condition or evaluator.expression(properties, descriptor.condition) then
 			if descriptor.type == "add_gradle_run" then
@@ -63,14 +92,17 @@ function M.execute(project_root, descriptors, properties, callback)
 				table.insert(runs, { type = "maven", name = descriptor.name or "Maven", args = descriptor.goals or descriptor.tasks or {} })
 			elseif descriptor.type == "import_gradle_project" or descriptor.type == "import_maven_project" then
 				-- Emitted after staging is committed to the final destination.
-			elseif descriptor.type == "run_gradle_tasks" or descriptor.type == "git_add_all" or descriptor.type == "git_init" then
+			elseif descriptor.type == "run_gradle_tasks" then
+				local executable = collect_gradle_tasks(descriptor, runs, translate_ide_runs)
+				if executable then table.insert(finalizers, executable) end
+			elseif descriptor.type == "git_add_all" or descriptor.type == "git_init" then
 				table.insert(finalizers, descriptor)
 			else
 				return nil, { code = "unknown_finalizer", type = descriptor.type }
 			end
 		end
 	end
-	write_runs(project_root, runs)
+	run_metadata.write(project_root, runs)
 	if #finalizers == 0 then callback(nil) return true, nil end
 
 	local operation = { handle = nil, status = "pending", callbacks = {} }
@@ -88,18 +120,35 @@ function M.execute(project_root, descriptors, properties, callback)
 	function operation.cancel()
 		if operation.status ~= "pending" or operation.cancel_requested then return end
 		operation.cancel_requested = true
-		if operation.handle then operation.handle:kill(15) else callback({ code = "cancelled" }); finish({ status = "cancelled" }) end
+		if operation.child and operation.child.cancel then operation.child.cancel()
+		elseif operation.handle then operation.handle:kill(15)
+		else finish({ status = "cancelled" }); callback({ code = "cancelled" }) end
 	end
 	local function run(index)
 		if operation.cancel_requested then return end
-		if index > #finalizers then callback(nil); finish({ status = "generated" }); return end
+		if index > #finalizers then finish({ status = "generated" }); callback(nil); return end
+		if is_wrapper_finalizer(finalizers[index]) then
+			operation.child = gradle.generate_gradlew(project_root, nil, wrapper_version(project_root))
+			operation.child.on_complete(function(result)
+				operation.child = nil
+				if operation.cancel_requested then finish({ status = "cancelled" }); callback({ code = "cancelled" }); return end
+				if result.status ~= "generated" then
+					local err = { code = "finalizer_failed", type = "run_gradle_tasks", detail = result.error }
+					finish({ status = "failed", error = err })
+					callback(err)
+					return
+				end
+				run(index + 1)
+			end)
+			return
+		end
 		local command = command_for(finalizers[index], project_root)
 		operation.handle = vim.system(command, { cwd = project_root, text = true }, vim.schedule_wrap(function(result)
-			if operation.cancel_requested then callback({ code = "cancelled" }); finish({ status = "cancelled" }); return end
+			if operation.cancel_requested then finish({ status = "cancelled" }); callback({ code = "cancelled" }); return end
 			if result.code ~= 0 then
 				local err = { code = "finalizer_failed", type = finalizers[index].type, detail = result.stderr }
-				callback(err)
 				finish({ status = "failed", error = err })
+				callback(err)
 				return
 			end
 			run(index + 1)

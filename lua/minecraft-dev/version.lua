@@ -34,6 +34,13 @@ local function compare(version, expected)
 end
 
 ---@param version string
+---@param expected string
+---@return integer?
+function M.compare(version, expected)
+	return compare(version, expected)
+end
+
+---@param version string
 ---@return integer
 function M.required_java(version)
 	if type(version) ~= "string" then return 21 end
