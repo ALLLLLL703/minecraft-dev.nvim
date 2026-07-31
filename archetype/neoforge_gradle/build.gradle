@@ -1,0 +1,52 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'idea'
+${GRADLE_PLUGIN}${KOTLIN_PLUGIN}}
+
+version = ${MOD_VERSION}
+group = ${GROUP_ID}
+base { archivesName = ${MOD_ID_QUOTED} }
+
+repositories {
+    mavenLocal()
+${KOTLIN_REPOSITORY}}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(${JAVA_VERSION})
+${KOTLIN_TOOLCHAIN}
+${NEOFORGE_CONFIGURATION}
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+dependencies {
+${NEOFORGE_DEPENDENCY}${KFF_DEPENDENCY}}
+
+var generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    var replaceProperties = [
+        minecraft_version: minecraft_version,
+        minecraft_version_range: minecraft_version_range,
+        neo_version: neo_version,
+        neo_version_range: neo_version_range,
+        loader_version_range: loader_version_range,
+        mod_id: mod_id,
+        mod_name: mod_name,
+        mod_license: mod_license,
+        mod_version: mod_version,
+        mod_authors: mod_authors,
+        mod_description: mod_description,
+        mod_update_url: mod_update_url,
+        mod_website: mod_website
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from 'src/main/templates'
+    into 'build/generated/sources/modMetadata'
+}
+
+sourceSets.main.resources.srcDir generateModMetadata
+${IDE_SYNC_TASK}
+publishing {
+    publications { register('mavenJava', MavenPublication) { from components.java } }
+    repositories { maven { url "file://${project.projectDir}/repo" } }
+}
+
+idea.module { downloadSources = true; downloadJavadoc = true }

@@ -200,3 +200,43 @@ require("minecraft-dev").generate({
 - 快速回归覆盖动态目录、50 项限制、取消与重入、官方向导、七套入口、1.20 精确边界、两套 Config、Mixin、metadata、许可证、pack format、run metadata、隔离 wrapper 和跨行 Velocity 指令；最终独立复审为 `No findings`。
 - 原生 Forge 1.16.5/36.2.42、1.20.1/47.4.10、1.21.1/52.1.0 三版本构建报告为 `/tmp/minecraft-dev-p16-forge.json`；Parchment 复验报告为 `/tmp/minecraft-dev-p16-forge-final.json`，1.20.6/50.1.17 专用构造器边界报告为 `/tmp/minecraft-dev-p16-forge-1.20.6.json`，均通过。
 - 实际官方 Forge descriptor 的 1.21.1/Mixin 项目通过隔离 wrapper 生成和真实构建，报告为 `/tmp/minecraft-dev-p16-forge-descriptor.json`；`genIntellijRuns` 被转换为 Neovim Client、Server、Data run，并保留模板声明的 Build run。
+
+## 当前实现切片：P1.7 NeoForge
+
+### 目标与边界
+
+- 将现有仅支持 Java、固定 ModDevGradle 版本的 NeoForge 占位生成路径替换为可构建的 Java/Kotlin 原生生成器，并让官方 descriptor 的 `neoforge_versions` 与 `parchment` 属性不再要求手工输入 JSON。
+- 支持 Minecraft 1.20.5–1.21.4；该上限与本阶段验证过的三套 Config、NeoGradle/ModDevGradle 分界和上游固定模板一致。更新版本及 26.x NeoForge 模型留给后续明确的模板同步，不在未验证时自动暴露。
+- Minecraft 1.21+ 使用 ModDevGradle，1.20.5/1.20.6 使用 NeoGradle。调用方显式提供完整版本集合时不访问网络；缺少 Loader 或对应 Gradle 插件版本时异步补全。
+- 不复制 IntelliJ Gradle 导入行为；改为生成 Neovim 可消费的 Client、Server、Data 与 Build run metadata。
+
+### 模块与数据流
+
+- `lua/minecraft-dev/generators/neoforge/version_data.lua`：并行读取 NeoForge、NeoGradle 与 ModDevGradle Maven metadata，解析受支持的 Minecraft/Loader 组合，输出 `minecraft`、`neoforge`、`neogradle`、`moddev`、`minecraftNext`、`neoforgeSpec`。另按已选 Minecraft 从 Parchment 公共 Maven metadata 读取 mappings 版本；请求显式发送 `Accept: application/xml`，避免落入 HTML UI 重定向。
+- `lua/minecraft-dev/custom/neoforge_versions.lua`：顺序选择 Minecraft 与 NeoForge 版本，并消费目录中对应的构建插件版本。
+- `lua/minecraft-dev/custom/parchment.lua`：读取 descriptor 指定的 Minecraft 复合属性，选择启用状态与 mappings 版本，输出上游同名的 `use`、`version`、`minecraftVersion` 字段；失败、取消和空响应均保持结构化终态。
+- `lua/minecraft-dev/generators/neoforge/native.lua`：只负责 NeoForge 文件集合、版本断点和 Gradle wrapper；模板资源位于 `archetype/neoforge_gradle/`，避免在 Lua 中硬编码大型 Java/Kotlin/Gradle 文件。
+- `lua/minecraft-dev/generators/forge.lua` 退化为 Forge/NeoForge 分发入口；`project.lua` 在原生 NeoForge spec 不完整时通过版本模块异步补全，继续复用 staging、取消和一次性回调生命周期。
+
+### 生成规则
+
+- Java 生成上游示例主类和三套 Config：`<1.21`、`1.21..<1.21.3`、`>=1.21.3`；Kotlin 生成 KotlinForForge 主类及 `ModBlocks.kt`。
+- Gradle 构建按 1.21 分界选择插件；Kotlin 使用上游固定兼容映射：1.20.5 为 KotlinForForge 5.0.0/Kotlin 1.9.23，1.20.6 为 5.2.0/2.0.0，1.21+ 为 5.3.0/2.0.0。
+- ModDevGradle 使用 Gradle 8.8；当前 NeoGradle 7.1.38 发布的插件 API 要求 Gradle 8.14，因此 1.20.5/1.20.6 项目使用 8.14 wrapper。
+- 1.21.4+ datagen 使用 `clientData()`，更早 ModDevGradle 使用 `data()`；NeoGradle 保留 `runs` DSL。
+- Mixin JSON 仅在 Minecraft <1.20.2 写 refmap；本阶段最低版本为 1.20.5，因此所有可选版本都不输出 refmap，但纯函数测试固定该通用边界。
+- metadata 源文件写入 `src/main/templates/META-INF/neoforge.mods.toml`，`generateModMetadata` 展开后加入 main resources；同时生成 `assets/<modid>/lang/en_us.json`、许可证、版本化 `pack.mcmeta` 与 run metadata。
+
+### 验证与失败路径
+
+- 固定 Maven XML fixture 覆盖乱序、beta/release 排序、无效坐标、支持上限、三个派生插件版本和 Parchment XML；不让快速测试依赖在线服务。
+- 向导测试覆盖 NeoForge 两级选择、Parchment 启用/关闭和复合属性输出；版本加载测试覆盖三个并行请求全部退出后再完成取消。
+- 通过公开 `generate()` 覆盖 Java 1.20.6、Java 1.21.1、Java 1.21.4 与 Kotlin，断言三套 Config、Gradle 插件分界、datagen DSL、Mixin、lang、templates metadata 和版本属性。
+- 至少真实构建 Java 1.21.4/ModDevGradle 与 Kotlin 1.20.6/NeoGradle；构建报告记录 JDK、Gradle、版本和失败分类。完成后运行完整快速回归和 Neovim 交互健康检查。
+
+### 依赖与参考决策
+
+- 参考 `minecraft-dev/templates@40b091262cff4130b9f61bc25de6cb9e2439d745` 的 NeoForge descriptor、Gradle、Java/Kotlin、Config、metadata 与语言模板，以及 `minecraft-dev/MinecraftDev@6da60db01112200c2b4c73795bdf18db17aa2023` 的 NeoForge/Parchment 复合模型。
+- 版本来源使用 NeoForged、ParchmentMC 与 KotlinForForge 官方 Maven 仓库；Gradle DSL 以 NeoForged ModDevGradle 官方文档为准。
+- 不引入 XML、HTTP、异步或项目生成依赖：仓库已有的窄 Maven metadata 解析、`vim.system`、operation 生命周期和模板读取模块已覆盖所需能力；新增依赖只会扩大安装面且不能替代 NeoForge 版本兼容规则。
+- 快速回归覆盖动态目录、Parchment raw XML header、官方属性模型、并行取消、Java/Kotlin、三套 Config、Gradle 插件分界、datagen、Mixin、pack format、metadata 转义、lang、metadata templates 和 wrapper 分界。Java 1.21.4/ModDevGradle/Parchment 构建通过，并使用含引号、换行和 `$` 的元数据复验最终 TOML，报告为 `/tmp/minecraft-dev-p17-neoforge-final.json`；Kotlin 1.20.6/NeoGradle/KotlinForForge 构建通过，报告为 `/tmp/minecraft-dev-p17-neoforge-kotlin.json`。最终独立复审为 `No findings`。

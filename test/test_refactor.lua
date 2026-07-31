@@ -11,6 +11,7 @@ local custom_evaluator = require("minecraft-dev.custom.evaluator")
 local custom_property_values = require("minecraft-dev.custom.property_values")
 local fabric_version_data = require("minecraft-dev.generators.fabric.version_data")
 local forge_version_data = require("minecraft-dev.generators.forge.version_data")
+local neoforge_version_data = require("minecraft-dev.generators.neoforge.version_data")
 local plugin_version_data = require("minecraft-dev.generators.plugin.version_data")
 local gradle = require("minecraft-dev.util.gradle")
 local version = require("minecraft-dev.version")
@@ -1607,6 +1608,7 @@ local function test_forge_family_generation()
 			build_system = "gradle",
 			minecraft_version = "1.21.1",
 			loader_version = platform == "forge" and "52.1.0" or "21.1.209",
+			moddev_version = platform == "neoforge" and "2.0.143" or nil,
 			directory = directory,
 			group_id = "com.example",
 			artifact_id = "examplemod",
@@ -1627,8 +1629,9 @@ local function test_forge_family_generation()
 			assert_truthy(read_file(directory .. "/settings.gradle"):find("repo.spongepowered.org", 1, true) ~= nil, "Forge Mixins should configure the Sponge plugin repository")
 		end
 		assert_equal(vim.fn.filereadable(directory .. "/src/main/resources/examplemod.mixins.json"), 1, platform .. " should generate mixin config")
-		local manifest = platform == "forge" and "mods.toml" or "neoforge.mods.toml"
-		assert_equal(vim.fn.filereadable(directory .. "/src/main/resources/META-INF/" .. manifest), 1, platform .. " manifest should exist")
+		local manifest_path = platform == "forge" and "/src/main/resources/META-INF/mods.toml"
+			or "/src/main/templates/META-INF/neoforge.mods.toml"
+		assert_equal(vim.fn.filereadable(directory .. manifest_path), 1, platform .. " manifest should exist")
 		vim.fn.delete(directory, "rf")
 	end
 	gradle.generate_gradlew = original_generate_gradlew
@@ -1738,6 +1741,196 @@ local function test_forge_version_data_and_wizard()
 	assert_equal(input_count, 2, "Forge versions should only require directory and project name text input")
 	assert_equal(generated_properties.VERSIONS.minecraft, "1.20.1", "Forge wizard should retain the selected Minecraft version")
 	assert_equal(generated_properties.VERSIONS.forge, "47.4.10", "Forge wizard should select the newest compatible Forge")
+end
+
+local function neoforge_metadata_fixture(values)
+	local versions = {}
+	for _, value in ipairs(values) do table.insert(versions, "<version>" .. value .. "</version>") end
+	return "<metadata><versioning><versions>" .. table.concat(versions) .. "</versions></versioning></metadata>"
+end
+
+local function test_neoforge_version_data_and_wizard()
+	local catalog, parse_error = neoforge_version_data.parse_catalog_responses(
+		neoforge_metadata_fixture({ "21.4.1-beta", "20.6.139", "21.4.156", "21.1.209", "21.5.1", "20.4.200" }),
+		neoforge_metadata_fixture({ "7.0.168", "7.1.38" }),
+		neoforge_metadata_fixture({ "2.0.116", "2.0.143" })
+	)
+	assert_equal(parse_error, nil, "valid NeoForge Maven metadata should parse")
+	assert_equal(catalog.minecraft, { "1.21.4", "1.21.1", "1.20.6" }, "NeoForge should expose only the supported Minecraft range")
+	assert_equal(catalog.neoforge["1.21.4"], { "21.4.156", "21.4.1-beta" }, "NeoForge releases should sort before prereleases")
+	assert_equal(catalog.neogradle[1], "7.1.38", "NeoGradle versions should sort newest first")
+	assert_equal(catalog.moddev[1], "2.0.143", "ModDevGradle versions should sort newest first")
+	assert_equal(neoforge_version_data.derive("1.21.4", "21.4.156", "7.1.38", "2.0.143"), {
+		minecraft = "1.21.4", neoforge = "21.4.156", neogradle = "7.1.38", moddev = "2.0.143",
+		minecraftNext = "1.22", neoforgeSpec = "21.4",
+	}, "NeoForge model fields should match upstream derivations")
+	assert_equal(select(1, neoforge_version_data.parse_catalog_responses("<metadata/>", "<metadata/>", "<metadata/>")), nil, "empty NeoForge metadata should fail")
+	local requests = {}
+	local cancellation_count = 0
+	local cancelled_operation = neoforge_version_data.load(function(_, err)
+		cancellation_count = cancellation_count + 1
+		assert_equal(err.code, "cancelled", "NeoForge cancellation should remain structured")
+	end, function(_, _, callback)
+		local request = { callback = callback, killed = false }
+		function request.kill() request.killed = true end
+		table.insert(requests, request)
+		return request
+	end)
+	cancelled_operation.cancel()
+	assert_equal(cancelled_operation.status, "pending", "NeoForge cancellation should wait for every curl process")
+	for index, request in ipairs(requests) do
+		assert_equal(request.killed, true, "NeoForge cancellation should terminate every metadata request")
+		request.callback({ code = 143, stderr = "cancelled" })
+		vim.wait(1000, function() return index < #requests or cancelled_operation.status == "cancelled" end, 10)
+		if index < #requests then assert_equal(cancelled_operation.status, "pending", "NeoForge cancellation should not finish after only one child exits") end
+	end
+	assert_equal(cancelled_operation.status, "cancelled", "NeoForge cancellation should settle after all curl processes exit")
+	assert_equal(cancellation_count, 1, "NeoForge cancellation should callback exactly once")
+	local failed_requests = {}
+	local failure_error
+	local failed_operation = neoforge_version_data.load(function(_, err) failure_error = err end, function(_, _, callback)
+		local request = { callback = callback, killed = false }
+		function request.kill() request.killed = true end
+		table.insert(failed_requests, request)
+		return request
+	end)
+	failed_requests[1].callback({ code = 22, stderr = "not found" })
+	vim.wait(1000, function() return failed_requests[2].killed and failed_requests[3].killed end, 10)
+	assert_equal(failed_operation.status, "pending", "NeoForge failures should wait for remaining curl processes")
+	failed_operation.cancel()
+	failed_requests[2].callback({ code = 143, stderr = "cancelled" })
+	failed_requests[3].callback({ code = 143, stderr = "cancelled" })
+	vim.wait(1000, function() return failed_operation.status == "failed" end, 10)
+	assert_equal(failure_error.code, "version_fetch_failed", "cancellation after a fetch failure should preserve the first terminal cause")
+
+	local parchment_callback
+	local parchment_command
+	local parchment_values
+	local parchment_operation = neoforge_version_data.load_parchment("1.21.4", function(values) parchment_values = values end, function(command, _, callback)
+		parchment_command = command
+		parchment_callback = callback
+		return { kill = function() end }
+	end)
+	parchment_callback({ code = 0, stdout = neoforge_metadata_fixture({ "2024.04.29-nightly-SNAPSHOT", "2025.03.23" }), stderr = "" })
+	vim.wait(1000, function() return parchment_operation.status ~= "pending" end, 10)
+	assert_equal(parchment_values, { "2025.03.23", "2024.04.29-nightly-SNAPSHOT" }, "Parchment versions should include exact-version snapshots and sort newest first")
+	assert_truthy(table.concat(parchment_command, " "):find("Accept: application/xml", 1, true) ~= nil, "Parchment requests should force raw XML responses")
+	assert_truthy(table.concat(parchment_command, " "):find("maven.parchmentmc.org", 1, true) ~= nil, "Parchment should use the public repository containing 1.20.5 metadata")
+	local parchment_selector = require("minecraft-dev.custom.parchment")
+	local original_parchment_select = vim.ui.select
+	local disabled_parchment
+	vim.ui.select = function(_, _, callback) callback(false) end
+	local disabled_operation = parchment_selector.select(
+		{ parameters = { minecraftVersionProperty = "VERSIONS" } },
+		{ VERSIONS = { minecraft = "1.20.5" } },
+		function(value) disabled_parchment = value end
+	)
+	vim.ui.select = original_parchment_select
+	assert_equal(disabled_operation.status, "generated", "Parchment should be explicitly disableable")
+	assert_equal(disabled_parchment, { use = false, minecraftVersion = "1.20.5" }, "disabled Parchment should retain its Minecraft version")
+
+	local minecraft_dev = require("minecraft-dev")
+	local wizard = require("minecraft-dev.custom.wizard")
+	local original_list_templates = minecraft_dev.list_templates
+	local original_generate_template = minecraft_dev.generate_template
+	local original_load = neoforge_version_data.load
+	local original_load_parchment = neoforge_version_data.load_parchment
+	local original_input = vim.ui.input
+	local original_select = vim.ui.select
+	local generated_properties
+	local inputs = { "/tmp/neoforge-wizard", "neoforge-wizard" }
+	minecraft_dev.list_templates = function(options)
+		options.callback({ {
+			label = "NeoForge", group = "mod", descriptor = "neoforge/.mcdev.template.json",
+			definition = { properties = {
+				{ name = "VERSIONS", type = "neoforge_versions" },
+				{ name = "PARCHMENT", type = "parchment", parameters = { minecraftVersionProperty = "VERSIONS" } },
+			} },
+		} }, nil)
+		return { status = "generated", cancel = function() end }
+	end
+	minecraft_dev.generate_template = function(options)
+		generated_properties = options.properties
+		local result = { status = "generated" }
+		options.callback(result)
+		return { status = "generated", result = result, cancel = function() end }
+	end
+	neoforge_version_data.load = function(callback) callback(catalog); return { status = "generated", cancel = function() end }, nil end
+	neoforge_version_data.load_parchment = function(_, callback) callback({ "2025.03.23" }); return { status = "generated", cancel = function() end }, nil end
+	vim.ui.input = function(_, callback) callback(table.remove(inputs, 1)) end
+	vim.ui.select = function(items, options, callback)
+		if type(items[1]) == "table" then callback(items[1])
+		elseif options.prompt == require("minecraft-dev").config.prompts.neoforge.minecraft_version then callback("1.21.4")
+		else callback(items[1]) end
+	end
+	local wizard_operation = wizard.run()
+	minecraft_dev.list_templates = original_list_templates
+	minecraft_dev.generate_template = original_generate_template
+	neoforge_version_data.load = original_load
+	neoforge_version_data.load_parchment = original_load_parchment
+	vim.ui.input = original_input
+	vim.ui.select = original_select
+	assert_equal(wizard_operation.status, "generated", "NeoForge wizard should generate without JSON input")
+	assert_equal(generated_properties.VERSIONS.neoforge, "21.4.156", "NeoForge wizard should retain the selected loader")
+	assert_equal(generated_properties.VERSIONS.moddev, "2.0.143", "NeoForge wizard should retain the selected ModDevGradle version")
+	assert_equal(generated_properties.PARCHMENT.version, "2025.03.23", "NeoForge wizard should select Parchment mappings")
+end
+
+local function test_neoforge_versioned_generation()
+	local original_generate_gradlew = gradle.generate_gradlew
+	local wrapper_versions = {}
+	gradle.generate_gradlew = function(_, _, wrapper_version)
+		table.insert(wrapper_versions, wrapper_version)
+		return true
+	end
+	local cases = {
+		{ minecraft = "1.20.6", loader = "20.6.139", neogradle = "7.1.38", language = "java", plugin = "net.neoforged.gradle.userdev", config = "new ResourceLocation(name)", data = "programArguments.addAll", pack = 32 },
+		{ minecraft = "1.21.1", loader = "21.1.209", moddev = "2.0.143", language = "java", plugin = "net.neoforged.moddev", config = "ResourceLocation.parse(name)", data = "data()", pack = 34 },
+		{ minecraft = "1.21.3", loader = "21.3.93", moddev = "2.0.143", language = "java", plugin = "net.neoforged.moddev", config = "getValue(ResourceLocation.parse", data = "data()", pack = 42, metadata_edge = true },
+		{ minecraft = "1.21.4", loader = "21.4.156", moddev = "2.0.143", language = "java", plugin = "net.neoforged.moddev", config = "getValue(ResourceLocation.parse", data = "clientData()", pack = 46 },
+		{ minecraft = "1.20.6", loader = "20.6.139", neogradle = "7.1.38", language = "kotlin", plugin = "net.neoforged.gradle.userdev", data = "programArguments.addAll", pack = 32 },
+	}
+	for _, case in ipairs(cases) do
+		local directory = vim.fn.tempname()
+		vim.fn.mkdir(directory, "p")
+		local ok, err = generate_project({
+			platform = "neoforge", build_system = "gradle", minecraft_version = case.minecraft,
+			directory = directory, group_id = "com.example", artifact_id = "examplemod",
+			package_name = "com.example.examplemod", main_class = "ExampleMod", language = case.language,
+			loader_version = case.loader, neogradle_version = case.neogradle, moddev_version = case.moddev,
+			plugin_version = "1.0.0", plugin_name = case.metadata_edge and 'Example "Mod"' or nil,
+			description = case.metadata_edge and "first\nsecond '''\1" or nil,
+			update_url = case.metadata_edge and "https://example.invalid/$channel.json" or nil,
+			website = case.metadata_edge and "https://example.invalid/${project}" or nil,
+			license = "MIT", authors = case.metadata_edge and { "Example\\Author" } or { "Example" }, use_mixins = true,
+		})
+		assert_equal(ok, true, "NeoForge " .. case.minecraft .. " " .. case.language .. " generation should succeed")
+		assert_equal(err, nil, "NeoForge generation should not return an error")
+		local build = read_file(directory .. "/build.gradle")
+		assert_truthy(build:find(case.plugin, 1, true) ~= nil, "NeoForge should select the correct Gradle plugin")
+		assert_truthy(build:find(case.data, 1, true) ~= nil, "NeoForge should select the correct datagen DSL")
+		assert_equal(vim.fn.filereadable(directory .. "/src/main/templates/META-INF/neoforge.mods.toml"), 1, "NeoForge metadata should remain a resource template")
+		assert_equal(vim.fn.filereadable(directory .. "/src/main/resources/assets/examplemod/lang/en_us.json"), 1, "NeoForge should generate English translations")
+		assert_truthy(not read_file(directory .. "/src/main/resources/examplemod.mixins.json"):find("refmap", 1, true), "NeoForge 1.20.5+ Mixins should omit refmaps")
+		assert_equal(vim.json.decode(read_file(directory .. "/src/main/resources/pack.mcmeta")).pack.pack_format, case.pack, "NeoForge should use the Minecraft resource pack format")
+		if case.metadata_edge then
+			local properties = read_file(directory .. "/gradle.properties")
+			assert_truthy(properties:find("mod_description=first\\\\nsecond", 1, true) ~= nil, "NeoForge metadata should keep multiline descriptions on one properties line")
+			assert_truthy(properties:find("\\\\u0001", 1, true) ~= nil, "NeoForge metadata should encode forbidden TOML control characters")
+			assert_truthy(read_file(directory .. "/src/main/templates/META-INF/neoforge.mods.toml"):find('description="${mod_description}"', 1, true) ~= nil, "NeoForge descriptions should expand into escaped TOML basic strings")
+			assert_truthy(read_file(directory .. "/src/main/templates/META-INF/neoforge.mods.toml"):find('${mod_update_url}', 1, true) ~= nil, "NeoForge URLs should be expanded from property values rather than nested template text")
+		end
+		if case.language == "java" then
+			assert_truthy(read_file(directory .. "/src/main/java/com/example/examplemod/Config.java"):find(case.config, 1, true) ~= nil, "NeoForge should select the matching Config template")
+		else
+			assert_equal(vim.fn.filereadable(directory .. "/src/main/kotlin/com/example/examplemod/ExampleMod.kt"), 1, "Kotlin NeoForge should generate a Kotlin entrypoint")
+			assert_truthy(build:find("kotlinforforge-neoforge:5.2.0", 1, true) ~= nil, "Kotlin NeoForge should use the compatible KotlinForForge version")
+			assert_equal(vim.fn.filereadable(directory .. "/src/main/java/com/example/examplemod/mixin/ExampleMixin.java"), 1, "Kotlin NeoForge Mixins should remain Java sources")
+		end
+		vim.fn.delete(directory, "rf")
+	end
+	assert_equal(wrapper_versions, { "8.14", "8.8", "8.8", "8.8", "8.14" }, "NeoForge should use Gradle versions compatible with each plugin family")
+	gradle.generate_gradlew = original_generate_gradlew
 end
 
 local function test_forge_versioned_generation()
@@ -2273,6 +2466,18 @@ local function test_project_validation()
 	local unsafe_parchment, unsafe_parchment_error = project.validate(vim.tbl_extend("force", forge, { parchment_version = "2024.11.17'" }))
 	assert_equal(unsafe_parchment, nil, "Forge should reject unsafe Parchment versions")
 	assert_equal(unsafe_parchment_error, { code = "invalid_version", field = "parchment_version" }, "unsafe Parchment versions should fail structurally")
+	local neoforge = vim.tbl_extend("force", valid, {
+		platform = "neoforge", minecraft_version = "1.21.4", artifact_id = "examplemod", language = "kotlin",
+	})
+	local dynamic_neoforge, dynamic_neoforge_error = project.validate(neoforge)
+	assert_truthy(dynamic_neoforge ~= nil, "NeoForge should allow Kotlin and dynamic version resolution")
+	assert_equal(dynamic_neoforge_error, nil, "dynamic NeoForge validation should not fail")
+	local old_neoforge, old_neoforge_error = project.validate(vim.tbl_extend("force", neoforge, { minecraft_version = "1.20.4" }))
+	assert_equal(old_neoforge, nil, "NeoForge should reject Minecraft versions before 1.20.5")
+	assert_equal(old_neoforge_error, { code = "unsupported_version", field = "minecraft_version" }, "old NeoForge versions should fail structurally")
+	local future_neoforge, future_neoforge_error = project.validate(vim.tbl_extend("force", neoforge, { minecraft_version = "1.21.5" }))
+	assert_equal(future_neoforge, nil, "NeoForge should reject versions outside the validated template range")
+	assert_equal(future_neoforge_error, { code = "unsupported_version", field = "minecraft_version" }, "future NeoForge versions should fail structurally")
 end
 
 local function test_project_generation_results()
@@ -2874,6 +3079,8 @@ local function run()
 	test_fabric_online_version_parser()
 	test_forge_family_generation()
 	test_forge_version_data_and_wizard()
+	test_neoforge_version_data_and_wizard()
+	test_neoforge_versioned_generation()
 	test_forge_versioned_generation()
 	test_additional_plugin_platforms()
 	test_waterfall_version_resolution()

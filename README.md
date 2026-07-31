@@ -150,13 +150,18 @@ BungeeCord and Waterfall target Java 8; Kotlin projects shade the Kotlin runtime
 Sponge derives Java 16/17/21 from API 8/9-10/11+, uses SpongeGradle metadata for Gradle, and writes
 `META-INF/sponge_plugins.json` for Maven.
 
-Forge and NeoForge use Gradle. NeoForge requires `loader_version`; Forge resolves the newest compatible version from
-the official Maven metadata when `loader_version` is omitted. An explicit Forge `loader_version` bypasses that lookup,
-so callers are responsible for supplying a compatible version. This ForgeGradle 6 generator supports Minecraft 1.16
-through 1.21.1 and also accepts
+Forge and NeoForge use Gradle and resolve compatible versions from official Maven metadata when their version fields
+are omitted. Explicit version fields bypass online resolution, so callers are responsible for compatible coordinates.
+The ForgeGradle 6 generator supports Minecraft 1.16 through 1.21.1 and also accepts
 `parchment_version`, `use_mixins`, `plugin_name`, `plugin_version`, `description`, `authors`, `website`, `update_url`,
 and `license`. Generated Forge projects include version-specific entry and Config sources, a compilable Mixin example
 when enabled, a license file, and client/server/data/build runs in `.nvim/minecraft-dev-runs.json`.
+
+NeoForge supports Java and Kotlin projects for Minecraft 1.20.5 through 1.21.4. Minecraft 1.21+ uses
+ModDevGradle through `moddev_version`; older projects use NeoGradle through `neogradle_version`. Kotlin projects use
+the matching KotlinForForge release. NeoForge also accepts `parchment_version` and
+`parchment_minecraft_version`, writes expandable metadata under `src/main/templates`, and generates version-specific
+Config, datagen, Mixin, language, license, pack metadata, and Neovim run files.
 
 Architectury uses Gradle and requires `fabric_loader_version`, `fabric_api_version`, `forge_version`, and
 `architectury_api_version`. It generates `common`, `fabric`, and `forge` modules.

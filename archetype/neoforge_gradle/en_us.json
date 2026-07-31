@@ -1,0 +1,4 @@
+{
+  "block.${MOD_ID}.example_block": "Example Block",
+  "itemGroup.${MOD_ID}": "Example Mod Tab"
+}

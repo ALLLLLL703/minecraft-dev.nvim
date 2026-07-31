@@ -179,14 +179,14 @@
 
 上游证据：`templates:neoforge/.mcdev.template.json`。
 
-- [ ] Kotlin 与 KotlinForForge。
-- [ ] 动态 NeoForge、NeoGradle、ModDevGradle 和 Parchment 版本。
-- [ ] MC >= 1.20.5 限制，MC 1.21+ 使用 ModDevGradle。
-- [ ] `<1.21`、`1.21..<1.21.3`、`>=1.21.3` 三套 Config 模板。
-- [ ] MC 1.21.4+ datagen 使用 `clientData()`。
-- [ ] MC 1.20.2+ Mixin JSON 不写 refmap。
-- [ ] 生成 `assets/<modid>/lang/en_us.json`。
-- [ ] 使用 `src/main/templates/META-INF/neoforge.mods.toml` 及资源展开。
+- [x] Kotlin 与 KotlinForForge。
+- [x] 动态 NeoForge、NeoGradle、ModDevGradle 和 Parchment 版本。
+- [x] MC >= 1.20.5 限制，MC 1.21+ 使用 ModDevGradle。
+- [x] `<1.21`、`1.21..<1.21.3`、`>=1.21.3` 三套 Config 模板。
+- [x] MC 1.21.4+ datagen 使用 `clientData()`。
+- [x] MC 1.20.2+ Mixin JSON 不写 refmap。
+- [x] 生成 `assets/<modid>/lang/en_us.json`。
+- [x] 使用 `src/main/templates/META-INF/neoforge.mods.toml` 及资源展开。
 
 验收：Java/Kotlin 和三个版本断点均有生成测试，至少两个组合真实构建。
 

@@ -80,6 +80,14 @@ M.default_config = {
 			minecraft_version = "Select Minecraft version",
 			loader_version = "Select Forge version",
 		},
+		neoforge = {
+			minecraft_version = "Select Minecraft version",
+			loader_version = "Select NeoForge version",
+			neogradle_version = "Select NeoGradle version",
+			moddev_version = "Select ModDevGradle version",
+			use_parchment = "Use Parchment mappings?",
+			parchment_version = "Select Parchment mappings version",
+		},
 	},
 	messages = {
 		project = {

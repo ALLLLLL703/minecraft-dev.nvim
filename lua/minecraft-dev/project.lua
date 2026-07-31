@@ -103,11 +103,8 @@ function M.validate(spec)
 		return nil, validation_error("invalid_version", "waterfall_version")
 	end
 	if spec.platform == "forge" or spec.platform == "neoforge" then
-		if spec.language ~= "java" then
+		if spec.platform == "forge" and spec.language ~= "java" then
 			return nil, validation_error("unsupported_language", "language")
-		end
-		if spec.platform == "neoforge" and (type(spec.loader_version) ~= "string" or spec.loader_version == "") then
-			return nil, validation_error("missing_field", "loader_version")
 		end
 		if spec.platform == "forge" and spec.loader_version ~= nil
 			and (type(spec.loader_version) ~= "string" or not spec.loader_version:match("^%d+%.%d+%.%d+$"))
@@ -121,6 +118,19 @@ function M.validate(spec)
 		if spec.platform == "forge" and spec.parchment_version ~= nil
 			and (type(spec.parchment_version) ~= "string" or not spec.parchment_version:match("^[%w_.-]+$"))
 		then return nil, validation_error("invalid_version", "parchment_version") end
+		if spec.platform == "neoforge" then
+			if (require("minecraft-dev.version").compare(spec.minecraft_version, "1.20.5") or -1) < 0
+				or (require("minecraft-dev.version").compare(spec.minecraft_version, "1.21.4") or 1) > 0
+			then return nil, validation_error("unsupported_version", "minecraft_version") end
+			for _, field in ipairs({ "loader_version", "neogradle_version", "moddev_version", "parchment_version", "parchment_minecraft_version" }) do
+				if spec[field] ~= nil and (type(spec[field]) ~= "string" or not spec[field]:match("^[%w_.-]+$")) then
+					return nil, validation_error("invalid_version", field)
+				end
+			end
+			if spec.use_mixins ~= nil and type(spec.use_mixins) ~= "boolean" then
+				return nil, validation_error("invalid_type", "use_mixins")
+			end
+		end
 		if not spec.artifact_id:match("^[a-z][a-z0-9_]+$") or #spec.artifact_id > 64 then
 			return nil, validation_error("invalid_mod_id", "artifact_id")
 		end
@@ -333,6 +343,30 @@ function M.generate_async(spec, callback)
 					return
 				end
 				normalized.loader_version = data.forge
+				run_generator()
+			end
+		)
+		if not started or not fetch_operation then
+			finish({ status = "failed", error = { code = "version_resolution_failed", detail = started and fetch_error or fetch_operation } })
+			return operation
+		end
+		if operation.status == "pending" and not child then child = fetch_operation end
+	elseif normalized.platform == "neoforge" and (not normalized.loader_version
+		or (require("minecraft-dev.version").compare(normalized.minecraft_version, "1.21") or -1) >= 0 and not normalized.moddev_version
+		or (require("minecraft-dev.version").compare(normalized.minecraft_version, "1.21") or -1) < 0 and not normalized.neogradle_version)
+	then
+		local started, fetch_operation, fetch_error = pcall(
+			require("minecraft-dev.generators.neoforge.version_data").resolve,
+			normalized.minecraft_version,
+			function(data, err)
+				if not data then
+					if err and err.code == "cancelled" then finish({ status = "cancelled" })
+					else finish({ status = "failed", error = { code = "version_resolution_failed", detail = err } }) end
+					return
+				end
+				normalized.loader_version = normalized.loader_version or data.neoforge
+				normalized.neogradle_version = normalized.neogradle_version or data.neogradle
+				normalized.moddev_version = normalized.moddev_version or data.moddev
 				run_generator()
 			end
 		)
