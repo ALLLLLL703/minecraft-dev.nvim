@@ -240,3 +240,32 @@ require("minecraft-dev").generate({
 - 版本来源使用 NeoForged、ParchmentMC 与 KotlinForForge 官方 Maven 仓库；Gradle DSL 以 NeoForged ModDevGradle 官方文档为准。
 - 不引入 XML、HTTP、异步或项目生成依赖：仓库已有的窄 Maven metadata 解析、`vim.system`、operation 生命周期和模板读取模块已覆盖所需能力；新增依赖只会扩大安装面且不能替代 NeoForge 版本兼容规则。
 - 快速回归覆盖动态目录、Parchment raw XML header、官方属性模型、并行取消、Java/Kotlin、三套 Config、Gradle 插件分界、datagen、Mixin、pack format、metadata 转义、lang、metadata templates 和 wrapper 分界。Java 1.21.4/ModDevGradle/Parchment 构建通过，并使用含引号、换行和 `$` 的元数据复验最终 TOML，报告为 `/tmp/minecraft-dev-p17-neoforge-final.json`；Kotlin 1.20.6/NeoGradle/KotlinForForge 构建通过，报告为 `/tmp/minecraft-dev-p17-neoforge-kotlin.json`。最终独立复审为 `No findings`。
+
+## 当前实现切片：P2.1 Translation JSON 排序
+
+### 上游证据与适配边界
+
+- 参考 `minecraft-dev/MinecraftDev@52a49b87f8b07751557a78969c07772b6d196119` 的 `translations/actions/SortTranslationsAction.kt`、`translations/sorting/Ordering.kt`、`translations/sorting/TranslationSorter.kt` 与 `translations/TranslationFiles.kt`。
+- 上游支持 ascending、descending、按默认 `en_us` 文件和项目模板排序；首个 Neovim 切片实现前三种现代 JSON 模式。项目模板编辑器、旧版 `.lang` PSI、索引和 inspection 留待后续独立切片。
+- 只对 `assets/<namespace>/lang/<locale>.json` 生效，避免把通用 JSON 排序伪装成 Minecraft translation 功能。
+
+### 模块与公开行为
+
+- 新增 `lua/minecraft-dev/translations.lua`，纯逻辑负责解析、translation value 校验、按点分段 key 比较、默认 locale 顺序合并和确定性 JSON 输出；buffer IO 保持在模块边缘。
+- `require("minecraft-dev").sort_translations(options)` 是可复用入口。`options` 支持 `buffer`、`order` 和可选 `default_path`，返回 `{ status = "sorted", ... }` 或 `{ status = "failed", error = ... }`。
+- `:MinecraftDevSortTranslations [ascending|descending|like-default]` 操作当前 buffer，默认 ascending；命令补全只暴露三个受支持模式。
+- 读取同目录 `en_us.json` 仅用于 `like-default`；当前文件本身为默认 locale 时直接使用其 key 顺序。未知 key 按 ascending 稳定追加。
+- 命令成功、解析失败、非 translation 路径、缺少默认文件和无效 value 均通过现有 `config.messages` 与 notify helper 输出，不内联用户可见文本。
+
+### 格式与依赖决策
+
+- 使用 Neovim 0.12 内置 `vim.json.decode` 做语法解析，使用 `vim.json.encode` 逐项安全转义 key/value；按有序 key 列表组装根对象以支持 descending 和 like-default。
+- 保留首个属性的缩进风格与文件末尾换行状态，不尝试保留 JSON 中不具语义的属性间空白。
+- 已检索 `2nthony/sortjson.nvim`：它依赖 Go/外部 JSON 排序路径，只提供通用 key 排序，不能提供 Minecraft 默认 locale 对齐和结构化错误。Neovim 0.12 已有 JSON codec，因此拒绝新增依赖。
+
+### 场景验证
+
+- 纯内容：ascending、descending、点分段比较、转义字符、空对象、无效 JSON、数组根和非字符串 value。
+- 默认 locale：目标文件按 `en_us` 顺序排列，缺失于默认文件的 key 按 ascending 追加；默认文件缺失返回结构化错误。
+- buffer/命令：合法 translation buffer 被替换并保持末尾换行；普通 JSON 路径拒绝；命令注册、默认模式和补全可用。
+- 通过 Neovim MCP 运行目标测试、完整 `test/test_refactor.lua`、插件加载和用户命令冒烟测试。

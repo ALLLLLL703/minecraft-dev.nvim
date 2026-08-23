@@ -6,12 +6,29 @@ local platforms = require("minecraft-dev.platforms")
 function M.setup()
 	pcall(vim.api.nvim_del_user_command, "GmcPro")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevNew")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevSortTranslations")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
 	vim.api.nvim_create_user_command("MinecraftDevNew", function()
 		require("minecraft-dev.command").dispatch("")
 	end, {})
+	vim.api.nvim_create_user_command("MinecraftDevSortTranslations", function(opts)
+		local result = require("minecraft-dev").sort_translations({ order = opts.args ~= "" and opts.args or nil })
+		if result.status == "sorted" then
+			notify.notify(vim.log.levels.INFO, { "translations", "sorted" }, result.order)
+			return
+		end
+		local err = result.error or { code = "failed" }
+		notify.notify(vim.log.levels.ERROR, { "translations", err.code }, tostring(err.detail or ""))
+	end, {
+		nargs = "?",
+		complete = function(lead)
+			return vim.tbl_filter(function(order)
+				return vim.startswith(order, lead)
+			end, require("minecraft-dev.translations").orderings())
+		end,
+	})
 end
 
 function M.dispatch(args)

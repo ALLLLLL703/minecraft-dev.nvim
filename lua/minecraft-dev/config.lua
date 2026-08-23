@@ -14,6 +14,11 @@ M.default_config = {
 		command = {
 			use_cwd_when_path_missing = true,
 		},
+		translations = {
+			order = "ascending",
+			default_locale = "en_us",
+			indent = "  ",
+		},
 		paper = {
 			version = "1.21",
 			language = "java",
@@ -107,6 +112,18 @@ M.default_config = {
 			interactive_only = "%s requires the project wizard; run :GmcPro without arguments.",
 			generation_failed = "Failed to start project generation: %s",
 		},
+		translations = {
+			sorted = "Sorted Minecraft translations (%s).",
+			invalid_order = "Unsupported translation sort order: %s",
+			invalid_json = "Invalid translation JSON: %s",
+			invalid_root = "Translation JSON must contain a root object.",
+			invalid_value = "Translation value must be a string: %s",
+			duplicate_key = "Translation JSON contains a duplicate key: %s",
+			not_translation_file = "Current buffer is not a Minecraft translation JSON file: %s",
+			missing_default = "Default locale translation file was not found: %s",
+			buffer_unloaded = "Translation buffer is not loaded.",
+			failed = "Failed to sort Minecraft translations: %s",
+		},
 		reload = {
 			success = "Successfully reloaded minecraft-dev!",
 			module_reloaded = "%s reloaded",
@@ -159,6 +176,19 @@ function M.normalize(opts)
 	normalized = vim.tbl_deep_extend("force", vim.deepcopy(M.default_config), normalized)
 	if type(normalized.defaults.fabric.cache_ttl) ~= "number" or normalized.defaults.fabric.cache_ttl < 0 then
 		normalized.defaults.fabric.cache_ttl = M.default_config.defaults.fabric.cache_ttl
+	end
+	if type(normalized.defaults.translations) ~= "table" then
+		normalized.defaults.translations = vim.deepcopy(M.default_config.defaults.translations)
+	end
+	local translations = normalized.defaults.translations
+	if not require("minecraft-dev.translations").is_order(translations.order) then
+		translations.order = M.default_config.defaults.translations.order
+	end
+	if type(translations.default_locale) ~= "string" or not translations.default_locale:match("^[%w_%-]+$") then
+		translations.default_locale = M.default_config.defaults.translations.default_locale
+	end
+	if type(translations.indent) ~= "string" or translations.indent == "" or translations.indent:find("[\r\n]") then
+		translations.indent = M.default_config.defaults.translations.indent
 	end
 	return normalized
 end

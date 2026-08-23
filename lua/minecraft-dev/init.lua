@@ -34,6 +34,12 @@ function M.list_templates(options)
 	return require("minecraft-dev.custom").list(options)
 end
 
+---@param options? { buffer?: integer, order?: string, default_path?: string }
+---@return table
+function M.sort_translations(options)
+	return require("minecraft-dev.translations").sort_buffer(options)
+end
+
 function M.reload()
 	local cur_config = vim.deepcopy(M.config)
 	local notify = require("minecraft-dev.util.notify")

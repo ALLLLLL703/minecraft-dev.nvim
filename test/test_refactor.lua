@@ -3049,6 +3049,127 @@ local function test_fabric_metadata_mixins()
 	assert_equal(metadata.client_class_name(ctx, { language = "java" }), "MainClient", "java client class should derive from main class")
 end
 
+local function test_translation_json_sorting()
+	local translations = require("minecraft-dev.translations")
+	local normalized = config.normalize({ defaults = { translations = { order = "unknown", default_locale = "../en_us", indent = "\n" } } })
+	assert_equal(normalized.defaults.translations.order, "ascending", "invalid default sort order should normalize")
+	assert_equal(normalized.defaults.translations.default_locale, "en_us", "empty default locale should normalize")
+	assert_equal(normalized.defaults.translations.indent, "  ", "multiline indentation should normalize")
+	assert_equal(
+		config.normalize({ defaults = { translations = false } }).defaults.translations,
+		config.default_config.defaults.translations,
+		"non-table translation defaults should normalize"
+	)
+	local content = '{\n\t"item.demo.z": "Zed",\n\t"block.demo.a": "A\\nline",\n\t"item.demo.a": "Quoted \\\"value\\\""\n}\n'
+
+	local ascending, ascending_error = translations.sort_content(content, { order = "ascending" })
+	assert_equal(ascending_error, nil, "valid translation JSON should sort without an error")
+	assert_equal(
+		ascending,
+		'{\n\t"block.demo.a": "A\\nline",\n\t"item.demo.a": "Quoted \\\"value\\\"",\n\t"item.demo.z": "Zed"\n}\n',
+		"ascending translation sorting should preserve indentation, escaping, and trailing newline"
+	)
+
+	local descending = assert(translations.sort_content(content, { order = "descending" }))
+	assert_equal(
+		descending,
+		'{\n\t"item.demo.z": "Zed",\n\t"item.demo.a": "Quoted \\\"value\\\"",\n\t"block.demo.a": "A\\nline"\n}\n',
+		"descending translation sorting should reverse dotted-key order"
+	)
+
+	local like_default = assert(translations.sort_content(content, {
+		order = "like-default",
+		default_content = '{ "item.demo.a": "A", "block.demo.a": "B" }',
+	}))
+	assert_equal(
+		like_default,
+		'{\n\t"item.demo.a": "Quoted \\\"value\\\"",\n\t"block.demo.a": "A\\nline",\n\t"item.demo.z": "Zed"\n}\n',
+		"default-locale sorting should follow known keys and append unknown keys ascending"
+	)
+
+	assert_equal(assert(translations.sort_content("{}", { order = "ascending" })), "{}", "empty objects should remain valid JSON")
+	assert_equal(select(2, translations.sort_content("[]", { order = "ascending" })).code, "invalid_root", "arrays should be rejected")
+	assert_equal(select(2, translations.sort_content('{"key": 1}', { order = "ascending" })).code, "invalid_value", "non-string translation values should be rejected")
+	assert_equal(select(2, translations.sort_content("{", { order = "ascending" })).code, "invalid_json", "malformed JSON should be structured")
+	assert_equal(select(2, translations.sort_content('{"key": "A", "key": "B"}', { order = "ascending" })).code, "duplicate_key", "duplicate keys should be rejected without data loss")
+	assert_equal(select(2, translations.sort_content("{}", { order = "unknown" })).code, "invalid_order", "unknown ordering should be rejected")
+	assert_equal(select(2, translations.sort_content("{}", { order = "like-default" })).code, "missing_default", "like-default should require a default locale")
+end
+
+local function test_translation_buffer_and_command()
+	local minecraft_dev = require("minecraft-dev")
+	local translation_root = vim.fn.tempname()
+	local translation_directory = translation_root .. "/src/main/resources/assets/demo/lang"
+	vim.fn.mkdir(translation_directory, "p")
+	local buffer = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_buf_set_name(buffer, translation_directory .. "/fr_fr.json")
+	vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "{", '  "item.demo.z": "Z",', '  "item.demo.a": "A"', "}" })
+	vim.bo[buffer].filetype = "json"
+	vim.bo[buffer].eol = true
+
+	local result = minecraft_dev.sort_translations({ buffer = buffer, order = "ascending" })
+	assert_equal(result.status, "sorted", "public API should sort a Minecraft translation buffer")
+	assert_equal(
+		vim.api.nvim_buf_get_lines(buffer, 0, -1, false),
+		{ "{", '  "item.demo.a": "A",', '  "item.demo.z": "Z"', "}" },
+		"buffer sorting should replace the current translation content"
+	)
+	assert_truthy(vim.bo[buffer].eol, "buffer sorting should preserve end-of-line state")
+	vim.fn.writefile({ "{", '  "item.demo.z": "Z",', '  "item.demo.a": "A"', "}" }, translation_directory .. "/en_us.json")
+	local default_result = minecraft_dev.sort_translations({ buffer = buffer, order = "like-default" })
+	assert_equal(default_result.status, "sorted", "public API should read the sibling default locale")
+	assert_equal(
+		vim.api.nvim_buf_get_lines(buffer, 0, -1, false),
+		{ "{", '  "item.demo.z": "Z",', '  "item.demo.a": "A"', "}" },
+		"like-default buffer sorting should follow the sibling en_us order"
+	)
+	vim.fn.delete(translation_directory .. "/en_us.json")
+	assert_equal(
+		minecraft_dev.sort_translations({ buffer = buffer, order = "like-default" }).error.code,
+		"missing_default",
+		"missing sibling default locale should return a structured error"
+	)
+
+	local ordinary = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_buf_set_name(ordinary, vim.fn.tempname() .. "/settings.json")
+	vim.api.nvim_buf_set_lines(ordinary, 0, -1, false, { "{}" })
+	assert_equal(
+		minecraft_dev.sort_translations({ buffer = ordinary }).error.code,
+		"not_translation_file",
+		"public API should reject JSON outside a Minecraft lang directory"
+	)
+
+	assert_truthy(vim.fn.exists(":MinecraftDevSortTranslations") == 2, "setup should register the translation sorting command")
+	assert_equal(
+		vim.fn.getcompletion("MinecraftDevSortTranslations d", "cmdline"),
+		{ "descending" },
+		"translation command completion should expose supported ordering modes"
+	)
+	local original_notify = vim.notify
+	local command_error
+	vim.notify = function(message, level)
+		if level == vim.log.levels.ERROR then command_error = message end
+	end
+	vim.api.nvim_set_current_buf(ordinary)
+	vim.cmd("MinecraftDevSortTranslations")
+	vim.notify = original_notify
+	assert_truthy(
+		type(command_error) == "string" and command_error:find("not a Minecraft translation", 1, true) ~= nil,
+		"translation command should report a localized error for ordinary JSON"
+	)
+	vim.api.nvim_set_current_buf(buffer)
+	vim.cmd("MinecraftDevSortTranslations descending")
+	assert_equal(
+		vim.api.nvim_buf_get_lines(buffer, 0, -1, false),
+		{ "{", '  "item.demo.z": "Z",', '  "item.demo.a": "A"', "}" },
+		"translation command should apply the selected ordering to the current buffer"
+	)
+
+	vim.api.nvim_buf_delete(buffer, { force = true })
+	vim.api.nvim_buf_delete(ordinary, { force = true })
+	vim.fn.delete(translation_root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -3104,6 +3225,8 @@ local function run()
 	test_fabric_metadata_mixins()
 	test_paper_kotlin_templates()
 	test_paper_gradle_project_version()
+	test_translation_json_sorting()
+	test_translation_buffer_and_command()
 	print("test_refactor.lua: ok")
 end
 

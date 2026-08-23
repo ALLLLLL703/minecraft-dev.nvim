@@ -84,6 +84,7 @@ and use the command
 GmcPro
 GmcPro [bungeecord|fabric|paper|spigot|sponge|velocity|waterfall] [gradle|maven] minecraft_version [path]
 MinecraftDevNew
+MinecraftDevSortTranslations [ascending|descending|like-default]
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -91,6 +92,12 @@ MinecraftDev template repository. Forge, NeoForge, and Architectury require this
 sets do not fit the positional command. Fabric's composite versions use dedicated selectors rather than a JSON prompt;
 other unsupported composite property types still use JSON input. Prompts and messages remain configurable through
 `setup()`. Cancelling a wizard selection aborts generation without creating a project.
+
+`:MinecraftDevSortTranslations` sorts the current modern Minecraft translation file under
+`assets/<namespace>/lang/<locale>.json`. The default `ascending` mode compares dotted key segments;
+`descending` reverses that order, and `like-default` follows the sibling `en_us.json` order before appending
+locale-only keys alphabetically. The command rejects ordinary JSON files and non-string translation values rather
+than rewriting them as if they were Minecraft language files.
 
 When generating a Fabric project, the plugin now asks for:
 
@@ -139,6 +146,21 @@ Projects are prepared in a sibling staging directory and only moved into `direct
 finishes. Failed and cancelled generations remove staging output. The destination must be absent or empty.
 Concurrent generation of the same destination returns `generation_in_progress`. A lock left by a crashed process returns
 `stale_generation_lock`; verify that its recorded PID is no longer running before removing the adjacent lock file.
+
+Translation sorting is also available as a structured Lua API:
+
+```lua
+local result = require("minecraft-dev").sort_translations({
+  buffer = 0,
+  order = "like-default",
+})
+
+if result.status == "failed" then
+  vim.notify(vim.inspect(result.error), vim.log.levels.ERROR)
+end
+```
+
+Its defaults are configured through `defaults.translations.order`, `default_locale`, and `indent` in `setup()`.
 
 Paper and Spigot specifications also accept `plugin_name`, `plugin_version`, `description`, `authors`, `website`,
 `prefix`, `load`, `load_before`, `depend`, and `soft_depend`. Set `paper_manifest = true` to generate the experimental
