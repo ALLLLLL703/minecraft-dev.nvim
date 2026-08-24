@@ -20,6 +20,16 @@ M.default_config = {
 			indent = "  ",
 			template_path = nil,
 			diagnostics = true,
+			source_diagnostics = true,
+			source_calls = {
+				"Component.translatable",
+				"Component.translatableEscape",
+				"Component.translatableEscaped",
+				"I18n.get",
+				"I18n.format",
+				"StatCollector.translateToLocal",
+				"StatCollector.translateToLocalFormatted",
+			},
 		},
 		paper = {
 			version = "1.21",
@@ -134,6 +144,11 @@ M.default_config = {
 			format_mismatch = "Translation format arguments do not match the default locale: %s",
 			translation_key_required = "Place the cursor on a translation key or provide one explicitly.",
 			translation_not_found = "Default locale translation was not found: %s",
+			translation_missing = "Translation key does not exist in the default locale: %s",
+			translation_format_missing = "Translation call is missing format arguments: %s",
+			translation_format_superfluous = "Translation call has superfluous format arguments: %s",
+			translation_deprecated_removed = "Translation key was removed in deprecated.json: %s",
+			translation_deprecated_renamed = "Translation key was renamed in deprecated.json: %s",
 			buffer_unloaded = "Translation buffer is not loaded.",
 			failed = "Failed to sort Minecraft translations: %s",
 		},
@@ -208,6 +223,19 @@ function M.normalize(opts)
 	end
 	if type(translations.diagnostics) ~= "boolean" then
 		translations.diagnostics = true
+	end
+	if type(translations.source_diagnostics) ~= "boolean" then
+		translations.source_diagnostics = true
+	end
+	if type(translations.source_calls) ~= "table" or not vim.islist(translations.source_calls) then
+		translations.source_calls = vim.deepcopy(M.default_config.defaults.translations.source_calls)
+	else
+		for _, call in ipairs(translations.source_calls) do
+			if type(call) ~= "string" or vim.trim(call) == "" then
+				translations.source_calls = vim.deepcopy(M.default_config.defaults.translations.source_calls)
+				break
+			end
+		end
 	end
 	return normalized
 end

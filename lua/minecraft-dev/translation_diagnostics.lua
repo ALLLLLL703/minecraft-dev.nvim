@@ -67,6 +67,14 @@ local function format_signature(value)
 	return table.concat(parts, ",")
 end
 
+function M.format_argument_count(value)
+	local maximum = 0
+	for argument_index in format_signature(value):gmatch("(%d+):") do
+		maximum = math.max(maximum, tonumber(argument_index))
+	end
+	return maximum
+end
+
 local function message(code, detail)
 	local keys = {
 		duplicate_key = "duplicate_key",

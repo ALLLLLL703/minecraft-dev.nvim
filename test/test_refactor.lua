@@ -3370,6 +3370,77 @@ local function test_translation_index_navigation_and_completion()
 	vim.fn.delete(root, "rf")
 end
 
+local function test_translation_source_diagnostics_and_navigation()
+	local minecraft_dev = require("minecraft-dev")
+	local normalized = config.normalize({ defaults = { translations = { source_diagnostics = "yes", source_calls = false } } })
+	assert_equal(normalized.defaults.translations.source_diagnostics, true, "invalid source diagnostic config should normalize")
+	assert_equal(normalized.defaults.translations.source_calls, config.default_config.defaults.translations.source_calls, "invalid source calls should normalize")
+
+	local root = vim.fn.tempname()
+	vim.fn.mkdir(root .. "/.git", "p")
+	local lang = root .. "/src/main/resources/assets/demo/lang"
+	local deprecated_lang = root .. "/src/main/resources/assets/minecraft/lang"
+	vim.fn.mkdir(lang, "p")
+	vim.fn.mkdir(deprecated_lang, "p")
+	vim.fn.writefile({ "item.ok=Hello %s", "item.none=No args" }, lang .. "/en_us.lang")
+	vim.fn.writefile({ '{"removed":["item.removed"],"renamed":{"item.old":"item.new"}}' }, deprecated_lang .. "/deprecated.json")
+
+	local java = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_buf_set_name(java, root .. "/src/main/java/Demo.java")
+	vim.bo[java].filetype = "java"
+	vim.api.nvim_buf_set_lines(java, 0, -1, false, {
+		"class Demo { void test(String dynamic) {",
+		'  Component.translatable("item.missing");',
+		'  Component.translatable("item.ok");',
+		'  Component.translatable("item.none", 1);',
+		'  Component.translatable("item.removed");',
+		'  Component.translatable("item.old");',
+		'  I18n.format("item.ok", "ok");',
+		'  String.format("item.missing");',
+		"  Component.translatable(dynamic);",
+		"} }",
+	})
+	local result = minecraft_dev.diagnose_translation_usages({ buffer = java, root = root })
+	assert_equal(result.status, "diagnosed", "public API should diagnose Java translation calls")
+	local by_code = {}
+	for _, diagnostic in ipairs(result.diagnostics) do by_code[diagnostic.code] = diagnostic end
+	assert_equal(by_code.translation_missing.lnum, 1, "missing source keys should point at the string literal")
+	assert_equal(by_code.translation_format_missing.lnum, 2, "missing format arguments should be diagnosed")
+	assert_equal(by_code.translation_format_superfluous.lnum, 3, "superfluous format arguments should be diagnosed")
+	assert_equal(by_code.translation_deprecated_removed.lnum, 4, "removed keys should be diagnosed")
+	assert_equal(by_code.translation_deprecated_renamed.lnum, 5, "renamed keys should be diagnosed")
+	assert_equal(#result.references, 6, "unrelated format calls and dynamic keys should be ignored")
+
+	local namespace = require("minecraft-dev.translation_source").namespace()
+	assert_equal(#vim.diagnostic.get(java, { namespace = namespace }), #result.diagnostics, "source diagnostics should use an isolated namespace")
+	vim.api.nvim_set_current_buf(java)
+	vim.api.nvim_win_set_cursor(0, { 3, 30 })
+	local target = minecraft_dev.goto_translation({ buffer = java, root = root, open = false })
+	assert_equal(target.key, "item.ok", "source navigation should infer the translation string under the cursor")
+	assert_equal(target.locations[1].path, lang .. "/en_us.lang", "source navigation should reuse the default locale index")
+
+	local kotlin = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_buf_set_name(kotlin, root .. "/src/main/kotlin/Demo.kt")
+	vim.bo[kotlin].filetype = "kotlin"
+	vim.api.nvim_buf_set_lines(kotlin, 0, -1, false, { 'fun test() { Component.translatable("item.missing") }' })
+	local kotlin_result = minecraft_dev.diagnose_translation_usages({ buffer = kotlin, root = root })
+	assert_equal(kotlin_result.diagnostics[1].code, "translation_missing", "Kotlin call expressions should be recognized")
+	assert_equal(
+		minecraft_dev.diagnose_translation_usages({ buffer = java, root = root, language = "missing-parser" }).error.code,
+		"parser_unavailable",
+		"missing parsers should return a structured skipped result"
+	)
+
+	minecraft_dev.setup()
+	local first_count = #vim.api.nvim_get_autocmds({ group = "MinecraftDevTranslationSource" })
+	minecraft_dev.setup()
+	assert_equal(#vim.api.nvim_get_autocmds({ group = "MinecraftDevTranslationSource" }), first_count, "source diagnostic setup should be idempotent")
+
+	vim.api.nvim_buf_delete(java, { force = true })
+	vim.api.nvim_buf_delete(kotlin, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -3430,6 +3501,7 @@ local function run()
 	test_translation_buffer_and_command()
 	test_translation_file_diagnostics()
 	test_translation_index_navigation_and_completion()
+	test_translation_source_diagnostics_and_navigation()
 	print("test_refactor.lua: ok")
 end
 

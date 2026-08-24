@@ -334,3 +334,24 @@ require("minecraft-dev").generate({
 
 - DuckDuckGo 与 GitHub MCP 未找到维护中的 Neovim Minecraft translation key index。`nvim-cmp` 是通用 UI/聚合器，不能替代领域索引，且不应成为核心依赖。
 - 使用 Neovim 内置 `vim.fs`、buffer API 与现有 parser；测试覆盖多 namespace、JSON / `.lang`、损坏文件、去重排序、排除已有 key、光标 key、单/多目标、命令补全和 setup 幂等。
+
+## 当前实现切片：P2.5 源码 translation 调用点
+
+### 识别边界
+
+- 对标上游 `TranslationIdentifier`，但 Neovim 无法读取 IntelliJ external annotations、UAST dataflow 和映射后的方法解析；本阶段只识别 Java / Kotlin Tree-sitter 能确定的“受支持 call + 第一个常量字符串参数”。
+- 默认 call descriptor 包括 `Component.translatable*`、`I18n.get/format` 和 `StatCollector.translateToLocal*`，并通过 `defaults.translations.source_calls` 可配置。仅按完整调用后缀匹配，不把任意 `format()` 字符串误判为 translation。
+- Java / Kotlin parser 缺失、字符串插值、拼接或动态表达式时安全跳过。该边界明确低于上游 UAST constant dataflow，不用正则猜测求值结果。
+- 参数数量只检查可确定的 vararg 数量；Java/Kotlin 实参类型继续由 JDTLS/Kotlin LSP 负责，不复制编译器类型系统。
+
+### Diagnostics 与导航
+
+- 独立 source diagnostic namespace 标记 default locale 缺失 key、缺少 format 参数、多余 format 参数和 `deprecated.json` 中 removed/renamed key。
+- source diagnostics 使用现有 default-locale index；`deprecated.json` 只接受 `assets/minecraft/lang/deprecated.json` 的 `removed` string array 与 `renamed` string map。
+- `goto_translation()` 在当前 buffer 不是 translation 文件时询问 source identifier，复用 P2.4 的多 namespace 位置选择与 `open = false` 自动化接口。
+- setup 通过幂等 augroup 监听 Java/Kotlin buffer。parser 不可用时清空本插件 source namespace，并返回 `parser_unavailable`，不影响 LSP diagnostics。
+
+### 依赖与验证
+
+- 使用 Neovim 内置 Tree-sitter API；Java/Kotlin parser 是可选运行条件。当前 nvim-treesitter 已移除 `ensure_installed`，README 使用 `require("nvim-treesitter").install({ "java", "kotlin" })` 说明安装方式。
+- 测试覆盖 Java/Kotlin 有效调用、同名非 translation 方法、missing/superfluous format、missing key、removed/renamed、动态 key、source goto、parser 缺失与 augroup 幂等。

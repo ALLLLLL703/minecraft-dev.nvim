@@ -160,7 +160,7 @@ end
 local function key_at_cursor(buffer)
 	local format = translations.format_for_path(vim.api.nvim_buf_get_name(buffer))
 	if not format then
-		return nil
+		return require("minecraft-dev.translation_source").key_at_cursor(buffer)
 	end
 	local cursor = buffer == vim.api.nvim_get_current_buf() and vim.api.nvim_win_get_cursor(0)
 		or vim.api.nvim_buf_get_mark(buffer, ".")

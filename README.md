@@ -28,6 +28,8 @@ Now can using to generate
 ## Requirements
 
 - Neovim 0.12+
+- Java and Kotlin Tree-sitter parsers for source translation diagnostics (optional):
+  `require("nvim-treesitter").install({ "java", "kotlin" })`
 - Picker support
     - built-in `vim.ui.select` works by default
     - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) is optional for a richer language picker experience
@@ -61,6 +63,7 @@ require("minecraft-dev").setup({
 			default_locale = "en_us",
 			template_path = "minecraft_localization_template.lang", -- optional
 			diagnostics = true,
+			source_diagnostics = true,
 		},
 		paper = {
 			version = "1.21",
@@ -120,6 +123,13 @@ keys from different resource namespaces as multiple navigation targets. Non-defa
 `completefunc` source for `CTRL-X CTRL-U` only when they do not already define one; LSP `omnifunc` is never replaced.
 Lua integrations can use `list_translation_keys()`, `complete_translations()`, and `goto_translation({ open = false })`
 without opening UI.
+
+With Java/Kotlin Tree-sitter parsers installed, source diagnostics recognize configured Minecraft translation calls
+such as `Component.translatable`, `I18n.format`, and legacy `StatCollector` calls. They report missing keys,
+missing/superfluous format arguments, and removed or renamed keys from `assets/minecraft/lang/deprecated.json`.
+Constant-string calls also work with `MinecraftDevGotoTranslation`; interpolated, concatenated, or dynamic keys are
+left to the language server. Set `source_diagnostics = false` to disable automatic source checks, or replace
+`defaults.translations.source_calls` with the fully qualified call suffixes used by the project.
 
 When generating a Fabric project, the plugin now asks for:
 

@@ -8,6 +8,7 @@ function M.setup(opts)
 	require("minecraft-dev.command").setup()
 	require("minecraft-dev.translation_diagnostics").setup()
 	require("minecraft-dev.translation_index").setup()
+	require("minecraft-dev.translation_source").setup()
 end
 
 ---@param spec table
@@ -64,6 +65,12 @@ end
 ---@return table
 function M.goto_translation(options)
 	return require("minecraft-dev.translation_index").goto_translation(options)
+end
+
+---@param options? { buffer?: integer, root?: string, language?: string }
+---@return table
+function M.diagnose_translation_usages(options)
+	return require("minecraft-dev.translation_source").diagnose_buffer(options)
 end
 
 function M.reload()
