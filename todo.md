@@ -83,7 +83,7 @@
 
 ## 阶段 3：项目元数据与配置文件
 
-- [ ] `plugin.yml` / `paper-plugin.yml` 结构、类引用和依赖诊断
+- [x] `plugin.yml` / `paper-plugin.yml` 结构、类引用和依赖诊断
 - [ ] `mods.toml` / `neoforge.mods.toml` 结构、版本范围和 mod id 诊断
 - [ ] `fabric.mod.json` entrypoint、mixin config、资源路径和依赖诊断
 - [ ] Mixin JSON config package、class、required fields 和 compatibilityLevel 诊断
@@ -108,6 +108,16 @@
 - [x] 诊断 depend/softdepend/loadbefore 重复、自依赖与错误 item
 - [x] 诊断 Paper bootstrap/server dependency 的 load/required/join-classpath
 - [x] 添加配置消息、README 与两类 manifest 场景
+- [x] 通过 LSP MCP、Neovim MCP 与静态检查
+
+### P3.3：Forge / NeoForge TOML metadata（已完成）
+
+- [x] 通过 GitHub MCP 固定上游 schema、inspection、reference 与 completion 语义
+- [x] 建立保留 table path、值类型与位置的 TOML Tree-sitter 文档模型
+- [x] 诊断 mod id、字段类型、displayTest/ordering/side 枚举与依赖 table 目标
+- [x] 提供 mod id 与 logoFile 的结构化跳转及上下文补全
+- [x] 接入公开 API、配置消息、buffer diagnostics 生命周期和 README
+- [x] 覆盖 Forge、NeoForge、placeholder、资源路径、parser 错误和 setup 幂等
 - [x] 通过 LSP MCP、Neovim MCP 与静态检查
 
 ## 阶段 4：NBT 与资源编辑
@@ -150,3 +160,4 @@
 - P2.6 usage lookup：所有 locale 与已加载/磁盘 Java/Kotlin source、两类光标推断、损坏文件隔离、扫描上限、稳定排序和 quickfix 场景通过 Neovim MCP；核心五个 Lua 模块的 LSP MCP diagnostics 为零，`command.lua` 仅保留本阶段外的既有 nil-check warnings。
 - P3.1 Bukkit/Paper main：Java/Kotlin、本地继承链、抽象/错误/未知类型、未保存 buffer、扫描截断、quoted YAML、completion、goto、parser 缺失和 augroup 幂等通过 Neovim MCP；`jvm_index.lua`、`bukkit_metadata.lua`、配置和公开入口的 LSP MCP diagnostics 为零。
 - P3.2 Bukkit/Paper manifest：通用 YAML Tree-sitter model、重复 key、字段类型、legacy dependency、自依赖、Paper bootstrap/server load/boolean 与 malformed YAML 场景通过 Neovim MCP；三个生产 Lua 模块的 LSP MCP diagnostics 为零，Stylua 与目标 diff 检查通过。
+- P3.3 Forge/NeoForge TOML：Tree-sitter document model、schema/type/mod id/version range/enum/dependency owner diagnostics、Java/Kotlin `@Mod` 常量索引、manifest/source/logo 跳转、字段文档补全、placeholder 与 parser failure 场景通过 Neovim MCP；目标生产 Lua 的 LSP MCP diagnostics、Stylua 与 diff 检查通过。

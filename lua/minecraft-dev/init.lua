@@ -10,6 +10,7 @@ function M.setup(opts)
 	require("minecraft-dev.translation_index").setup()
 	require("minecraft-dev.translation_source").setup()
 	require("minecraft-dev.bukkit_metadata").setup()
+	require("minecraft-dev.forge_metadata").setup()
 end
 
 ---@param spec table
@@ -99,6 +100,30 @@ end
 function M.goto_bukkit_main(options)
 	---@diagnostic disable-next-line: param-type-mismatch
 	return require("minecraft-dev.bukkit_metadata").goto_main(options)
+end
+
+---@param options? { buffer?: integer, language?: string }
+---@return table
+function M.diagnose_forge_manifest(options)
+	return require("minecraft-dev.forge_metadata").diagnose_buffer(options)
+end
+
+---@param options? { buffer?: integer, prefix?: string, row?: integer, col?: integer, line?: string }
+---@return table
+function M.complete_forge_manifest(options)
+	return require("minecraft-dev.forge_metadata").complete(options)
+end
+
+---@param options? { buffer?: integer, root?: string, mod_id?: string, target?: "manifest"|"source", open?: boolean, max_files?: integer }
+---@return table
+function M.goto_forge_mod(options)
+	return require("minecraft-dev.forge_metadata").goto_mod(options)
+end
+
+---@param options? { buffer?: integer, open?: boolean }
+---@return table
+function M.goto_forge_logo(options)
+	return require("minecraft-dev.forge_metadata").goto_logo(options)
 end
 
 function M.reload()

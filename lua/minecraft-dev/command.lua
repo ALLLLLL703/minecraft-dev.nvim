@@ -10,6 +10,8 @@ function M.setup()
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoTranslation")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevFindTranslationUsages")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoBukkitMain")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoForgeMod")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoForgeLogo")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
@@ -70,6 +72,20 @@ function M.setup()
 			end, require("minecraft-dev").complete_bukkit_main({ prefix = lead }).items)
 		end,
 	})
+	vim.api.nvim_create_user_command("MinecraftDevGotoForgeMod", function(opts)
+		local result = require("minecraft-dev").goto_forge_mod({ mod_id = opts.args ~= "" and opts.args or nil })
+		if result.status == "failed" then
+			local err = result.error or { code = "toml_mod_id_unresolved" }
+			notify.notify(vim.log.levels.ERROR, { "metadata", err.code }, tostring(err.detail or ""))
+		end
+	end, { nargs = "?" })
+	vim.api.nvim_create_user_command("MinecraftDevGotoForgeLogo", function()
+		local result = require("minecraft-dev").goto_forge_logo()
+		if result.status == "failed" then
+			local err = result.error or { code = "toml_logo_unresolved" }
+			notify.notify(vim.log.levels.ERROR, { "metadata", err.code }, tostring(err.detail or ""))
+		end
+	end, {})
 end
 
 function M.dispatch(args)

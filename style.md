@@ -412,3 +412,23 @@ require("minecraft-dev").generate({
 ### 验证
 
 - 场景覆盖 flow/block sequence、quoted version、重复 key、缺失字段、错误容器类型、自依赖、Paper 两阶段依赖、错误 enum/boolean 和 malformed YAML。
+
+## 当前实现切片：P3.3 Forge / NeoForge TOML metadata
+
+### 上游与规范证据
+
+- GitHub MCP 对齐上游 `ModsTomlSchema`、`ModsTomlValidationInspection`、reference contributor 与 completion contributor：字段类型、mod id、`displayTest`、dependency `ordering` / `side`、dependency owner、`logoFile` 和已知值补全均有对应能力。
+- Context7 的 Forge 与 NeoForge 官方文档用于固定 loader metadata、`[[mods]]`、`[[dependencies.<modid>]]` 和 Maven version range 语义；动态 Gradle placeholder 保留为合法值。
+
+### 解析、诊断与引用
+
+- `toml_tree.parse_buffer()` 基于 Neovim Tree-sitter 保留 top-level pair、普通/array table path、值类型和零基位置；malformed TOML 与 parser 缺失返回结构化错误。
+- diagnostics 覆盖必填 loader 字段、schema 类型、重复字段、至少一个 mod、mod id 格式/重复、version range、已知 enum、dependency owner 和资源根下的 logo 文件；未知扩展字段保持兼容。
+- `jvm_index` 额外记录 Java/Kotlin `@Mod` 的 literal 或同类 string constant mod id；manifest modId 可诊断和跳转到本地 source class，dependency owner 则跳到同文件 `[[mods]]` 声明。
+- `goto_forge_logo()` 解析 `META-INF` 上一级资源根；不存在的运行时 mod 或外部 JAR 不在编辑期猜测。
+- buffer-local `completefunc` 提供 schema key、known string/boolean value 与 dependency owner mod id，并通过 completion `info` 携带字段文档，不覆盖 TOML LSP 的 `omnifunc` / hover。
+
+### 生命周期与验证
+
+- 独立 `minecraft-dev.metadata.forge` namespace 与 `MinecraftDevForgeMetadata` augroup，仅处理 `mods.toml` / `neoforge.mods.toml`，重复 setup 不累积 autocmd。
+- 场景覆盖 Forge/NeoForge、有效/错误字段、placeholder、union version range、依赖跳转、logo 跳转、补全、malformed TOML 与 parser 缺失。

@@ -3649,6 +3649,141 @@ function _G.MinecraftDevTestBukkitManifestStructureAndDependencies()
 	vim.fn.delete(root, "rf")
 end
 
+function _G.MinecraftDevTestForgeManifestMetadata()
+	local minecraft_dev = require("minecraft-dev")
+	local root = vim.fn.tempname()
+	local resources = root .. "/src/main/resources"
+	local metadata = resources .. "/META-INF"
+	local java = root .. "/src/main/java/test"
+	vim.fn.mkdir(root .. "/.git", "p")
+	vim.fn.mkdir(metadata, "p")
+	vim.fn.mkdir(java, "p")
+	vim.fn.writefile({
+		"package test;",
+		"import net.minecraftforge.fml.common.Mod;",
+		'@Mod("examplemod")',
+		"public final class ExampleMod {}",
+	}, java .. "/ExampleMod.java")
+	vim.fn.writefile({
+		"package test;",
+		"import net.minecraftforge.fml.common.Mod;",
+		"@Mod(ConstantMod.MODID)",
+		"public final class ConstantMod { public static final String MODID = \"constantmod\"; }",
+	}, java .. "/ConstantMod.java")
+	vim.fn.writefile({
+		"package test",
+		"import net.neoforged.fml.common.Mod",
+		'@Mod("kotlinmod")',
+		"class KotlinMod",
+	}, java .. "/KotlinMod.kt")
+	vim.fn.writefile({ "png" }, resources .. "/example.png")
+	local path = metadata .. "/mods.toml"
+	vim.fn.writefile({
+		'modLoader="javafml"',
+		'loaderVersion="[52,)"',
+		'license="MIT"',
+		"showAsResourcePack=false",
+		"[[mods]]",
+		'modId="examplemod"',
+		'version="${file.jarVersion}"',
+		'displayTest="MATCH_VERSION"',
+		'logoFile="example.png"',
+		"[[mods]]",
+		'modId="constantmod"',
+		"[[mods]]",
+		'modId="kotlinmod"',
+		"[[dependencies.examplemod]]",
+		'modId="forge"',
+		"mandatory=true",
+		'versionRange="(,51],[52,)"',
+		'ordering="NONE"',
+		'side="BOTH"',
+	}, path)
+	local buffer = vim.fn.bufadd(path)
+	vim.fn.bufload(buffer)
+	vim.bo[buffer].filetype = "toml"
+	local valid = minecraft_dev.diagnose_forge_manifest({ buffer = buffer })
+	assert_equal(valid.status, "diagnosed", "mods.toml should be parsed")
+	assert_equal(#valid.diagnostics, 0, "valid Forge metadata should pass")
+	assert_equal(#valid.document.tables, 4, "TOML model should preserve array tables")
+	assert_equal(minecraft_dev.goto_forge_mod({ buffer = buffer, mod_id = "examplemod", open = false }).status, "found", "dependency owner should resolve to a declared mod")
+	assert_equal(minecraft_dev.goto_forge_mod({ buffer = buffer, mod_id = "constantmod", open = false }).status, "found", "Java constant @Mod IDs should resolve")
+	vim.api.nvim_set_current_buf(buffer)
+	vim.api.nvim_win_set_cursor(0, { 14, 16 })
+	local owner_jump = minecraft_dev.goto_forge_mod({ buffer = buffer, open = false })
+	assert_equal(owner_jump.target, "manifest", "dependency header navigation should target the manifest declaration")
+	assert_equal(owner_jump.status, "found", "dependency header owner should resolve")
+
+	local completion = minecraft_dev.complete_forge_manifest({
+		buffer = buffer,
+		prefix = "MAT",
+		row = 7,
+		col = #'displayTest="MAT',
+		line = 'displayTest="MAT',
+	})
+	assert_equal(completion.items[1].word, "MATCH_VERSION", "known Forge values should complete")
+	assert_truthy(completion.items[1].info:find("compatibility", 1, true) ~= nil, "completion should include field documentation")
+	local mod_completion = minecraft_dev.complete_forge_manifest({
+		buffer = buffer,
+		prefix = "kotlin",
+		row = 5,
+		col = #'modId="kotlin',
+		line = 'modId="kotlin',
+	})
+	assert_equal(mod_completion.items[1].word, "kotlinmod", "Java/Kotlin @Mod IDs should complete")
+	vim.api.nvim_win_set_cursor(0, { 9, 12 })
+	assert_equal(minecraft_dev.goto_forge_logo({ buffer = buffer, open = false }).status, "found", "logoFile should resolve from the resource root")
+
+	vim.api.nvim_buf_set_lines(buffer, 0, -1, false, {
+		'modLoader="javafml"',
+		'loaderVersion="[52,"',
+		"[[mods]]",
+		'modId="Invalid Id"',
+		'modId="duplicate"',
+		'displayTest="INVALID"',
+		'logoFile="missing.png"',
+		"logoBlur=\"true\"",
+		"[[dependencies.unknown]]",
+		'modId="forge"',
+		'versionRange="(1"',
+		'ordering="FIRST"',
+		'side="UP"',
+	})
+	local invalid = minecraft_dev.diagnose_forge_manifest({ buffer = buffer })
+	local codes = {}
+	for _, item in ipairs(invalid.diagnostics) do codes[item.code] = item end
+	for _, code in ipairs({
+		"toml_field_required",
+		"toml_field_duplicate",
+		"toml_field_type_invalid",
+		"toml_mod_id_invalid",
+		"toml_dependency_owner_unresolved",
+		"toml_version_range_invalid",
+		"toml_display_test_invalid",
+		"toml_ordering_invalid",
+		"toml_side_invalid",
+		"toml_logo_unresolved",
+	}) do
+		assert_truthy(codes[code] ~= nil, "invalid Forge metadata should diagnose " .. code)
+	end
+
+	vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { 'modLoader="javafml"', 'loaderVersion="[1,)"', 'license="MIT"', "[[mods]]", 'modId="${mod_id}"' })
+	assert_equal(#minecraft_dev.diagnose_forge_manifest({ buffer = buffer }).diagnostics, 0, "build placeholders should remain valid")
+	vim.api.nvim_buf_set_name(buffer, metadata .. "/neoforge.mods.toml")
+	assert_equal(#minecraft_dev.diagnose_forge_manifest({ buffer = buffer }).diagnostics, 0, "neoforge.mods.toml should share metadata support")
+	vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "modLoader=[" })
+	assert_equal(minecraft_dev.diagnose_forge_manifest({ buffer = buffer }).error.code, "invalid_toml", "malformed TOML should fail structurally")
+	assert_equal(require("minecraft-dev.forge_metadata").inspect({ buffer = buffer, language = "missing_toml_parser" }).error.code, "parser_unavailable", "missing TOML parser should be isolated")
+
+	minecraft_dev.setup()
+	local first_autocmd_count = #vim.api.nvim_get_autocmds({ group = "MinecraftDevForgeMetadata" })
+	minecraft_dev.setup()
+	local autocmds = vim.api.nvim_get_autocmds({ group = "MinecraftDevForgeMetadata" })
+	assert_equal(#autocmds, first_autocmd_count, "Forge metadata setup should be idempotent")
+	vim.api.nvim_buf_delete(buffer, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -3713,6 +3848,8 @@ local function run()
 	test_bukkit_manifest_main_references()
 	_G.MinecraftDevTestBukkitManifestStructureAndDependencies()
 	_G.MinecraftDevTestBukkitManifestStructureAndDependencies = nil
+	_G.MinecraftDevTestForgeManifestMetadata()
+	_G.MinecraftDevTestForgeManifestMetadata = nil
 	print("test_refactor.lua: ok")
 end
 

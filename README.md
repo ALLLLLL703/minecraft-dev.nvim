@@ -102,6 +102,8 @@ MinecraftDevSortTranslations [ascending|descending|like-default|template]
 MinecraftDevGotoTranslation [key]
 MinecraftDevFindTranslationUsages [key]
 MinecraftDevGotoBukkitMain [fully.qualified.Class]
+MinecraftDevGotoForgeMod [mod_id]
+MinecraftDevGotoForgeLogo
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -154,6 +156,15 @@ The same diagnostics validate manifest structure without requiring a running ser
 `api-version`, command and permission mappings, legacy dependency lists, duplicate or self dependencies, and Paper
 `bootstrap`/`server` dependency options. Paper `load` accepts `BEFORE`, `AFTER`, or `OMIT`; `required` and
 `join-classpath` must be YAML booleans. Unknown extension fields remain allowed.
+
+With the TOML Tree-sitter parser installed, `mods.toml` and `neoforge.mods.toml` validate required loader metadata,
+field types, mod IDs, Maven-style version ranges, known `displayTest`/`ordering`/`side` values, dependency table owners,
+and `logoFile` resource paths, plus local Java/Kotlin `@Mod` declarations. Their buffer-local `completefunc` suggests
+schema keys, known values, dependency owners, and constant `@Mod` IDs; completion items carry field documentation.
+`:MinecraftDevGotoForgeMod` resolves a `[[dependencies.<modid>]]` owner to its `[[mods]]` declaration and a `modId`
+value to the matching source class, while
+`:MinecraftDevGotoForgeLogo` opens the resource under the manifest's resource root. Lua callers can use
+`diagnose_forge_manifest()`, `complete_forge_manifest()`, `goto_forge_mod()`, and `goto_forge_logo()`.
 
 When generating a Fabric project, the plugin now asks for:
 

@@ -158,6 +158,30 @@ local function declaration_parents(node, buffer, language, imports, package_name
 	return parents
 end
 
+local function forge_mod_ids(node, buffer)
+	local text = vim.treesitter.get_node_text(node, buffer)
+	local header = text:match("^[^{]*") or text
+	local ids = {}
+	for arguments in header:gmatch("@[%w_.$]*Mod%s*%((.-)%)") do
+		local direct = arguments:match('^%s*"([^"]+)"%s*$') or arguments:match('value%s*=%s*"([^"]+)"')
+		if direct then
+			table.insert(ids, direct)
+		else
+			local expression = arguments:match("value%s*=%s*([%w_.$]+)") or vim.trim(arguments):match("^([%w_.$]+)$")
+			local constant = expression and expression:match("([%w_$]+)$")
+			if constant then
+				local escaped = vim.pesc(constant)
+				local value = text:match("[%w_<>?,%s]*String%s+" .. escaped .. '%s*=%s*"([^"]+)"')
+					or text:match("const%s+val%s+" .. escaped .. '%s*=%s*"([^"]+)"')
+				if value then
+					table.insert(ids, value)
+				end
+			end
+		end
+	end
+	return ids
+end
+
 local function collect_declarations(node, buffer, file, package_name, imports, output, enclosing)
 	local next_enclosing = enclosing
 	if DECLARATIONS[node:type()] then
@@ -179,6 +203,7 @@ local function collect_declarations(node, buffer, file, package_name, imports, o
 				end_col = end_col,
 				abstract = header:match("%f[%w]abstract%f[%W]") ~= nil or node:type() == "interface_declaration",
 				parents = declaration_parents(node, buffer, file.language, imports, package_name),
+				forge_mod_ids = forge_mod_ids(node, buffer),
 			})
 			next_enclosing = nested
 		end
