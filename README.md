@@ -64,6 +64,7 @@ require("minecraft-dev").setup({
 			template_path = "minecraft_localization_template.lang", -- optional
 			diagnostics = true,
 			source_diagnostics = true,
+			source_scan_max_files = 1000,
 		},
 		paper = {
 			version = "1.21",
@@ -95,6 +96,7 @@ GmcPro [bungeecord|fabric|paper|spigot|sponge|velocity|waterfall] [gradle|maven]
 MinecraftDevNew
 MinecraftDevSortTranslations [ascending|descending|like-default|template]
 MinecraftDevGotoTranslation [key]
+MinecraftDevFindTranslationUsages [key]
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -130,6 +132,11 @@ missing/superfluous format arguments, and removed or renamed keys from `assets/m
 Constant-string calls also work with `MinecraftDevGotoTranslation`; interpolated, concatenated, or dynamic keys are
 left to the language server. Set `source_diagnostics = false` to disable automatic source checks, or replace
 `defaults.translations.source_calls` with the fully qualified call suffixes used by the project.
+
+`:MinecraftDevFindTranslationUsages [key]` lists matching entries from every locale plus supported constant Java/Kotlin
+calls in the quickfix window. Without an explicit key it uses the translation entry or source call under the cursor.
+Source scanning is bounded by `defaults.translations.source_scan_max_files`; Lua callers can use
+`find_translation_usages({ open = false })` to receive sorted structured locations without changing the UI.
 
 When generating a Fabric project, the plugin now asks for:
 

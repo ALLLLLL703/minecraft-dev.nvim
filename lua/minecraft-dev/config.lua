@@ -21,6 +21,7 @@ M.default_config = {
 			template_path = nil,
 			diagnostics = true,
 			source_diagnostics = true,
+			source_scan_max_files = 1000,
 			source_calls = {
 				"Component.translatable",
 				"Component.translatableEscape",
@@ -59,6 +60,7 @@ M.default_config = {
 	prompts = {
 		translations = {
 			select_translation = "Select Minecraft translation",
+			usages_title = "Minecraft translation usages",
 		},
 		custom = {
 			select_template = "Select Minecraft project template",
@@ -144,6 +146,7 @@ M.default_config = {
 			format_mismatch = "Translation format arguments do not match the default locale: %s",
 			translation_key_required = "Place the cursor on a translation key or provide one explicitly.",
 			translation_not_found = "Default locale translation was not found: %s",
+			translation_usages_not_found = "No translation usages were found: %s",
 			translation_missing = "Translation key does not exist in the default locale: %s",
 			translation_format_missing = "Translation call is missing format arguments: %s",
 			translation_format_superfluous = "Translation call has superfluous format arguments: %s",
@@ -226,6 +229,13 @@ function M.normalize(opts)
 	end
 	if type(translations.source_diagnostics) ~= "boolean" then
 		translations.source_diagnostics = true
+	end
+	if
+		type(translations.source_scan_max_files) ~= "number"
+		or translations.source_scan_max_files < 1
+		or translations.source_scan_max_files % 1 ~= 0
+	then
+		translations.source_scan_max_files = M.default_config.defaults.translations.source_scan_max_files
 	end
 	if type(translations.source_calls) ~= "table" or not vim.islist(translations.source_calls) then
 		translations.source_calls = vim.deepcopy(M.default_config.defaults.translations.source_calls)

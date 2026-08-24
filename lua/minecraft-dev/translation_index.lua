@@ -172,6 +172,8 @@ local function key_at_cursor(buffer)
 	return nil
 end
 
+M.key_at_cursor = key_at_cursor
+
 local function open_location(location)
 	vim.cmd.edit(vim.fn.fnameescape(location.path))
 	vim.api.nvim_win_set_cursor(0, { location.lnum + 1, location.col })

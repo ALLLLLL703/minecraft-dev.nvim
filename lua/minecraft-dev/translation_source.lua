@@ -120,6 +120,53 @@ local function parse_references(buffer, language, descriptors)
 	return references
 end
 
+---@param options? { buffer?: integer, language?: string }
+---@return table[]?, table?
+function M.references_in_buffer(options)
+	options = options or {}
+	local buffer = options.buffer or 0
+	local language = options.language or vim.bo[buffer].filetype
+	if language ~= "java" and language ~= "kotlin" then
+		return nil, { code = "unsupported_filetype" }
+	end
+	---@type MinecraftDevConfig
+	local config = require("minecraft-dev").config
+	return parse_references(buffer, language, config.defaults.translations.source_calls)
+end
+
+---@param file_path string
+---@param language "java"|"kotlin"
+---@return table[]?, table?
+function M.references_in_file(file_path, language)
+	local existing = vim.fn.bufnr(file_path)
+	local buffer = existing
+	local created = existing == -1
+	if created then
+		local handle = io.open(file_path, "r")
+		if handle == nil then
+			return nil, { code = "source_open_failed", detail = file_path }
+		end
+		local content = handle:read("*a")
+		handle:close()
+		buffer = vim.api.nvim_create_buf(false, true)
+		vim.api.nvim_buf_set_name(buffer, file_path)
+		vim.api.nvim_buf_set_lines(buffer, 0, -1, false, vim.split(content, "\n", { plain = true }))
+		vim.bo[buffer].filetype = language
+	elseif not vim.api.nvim_buf_is_loaded(buffer) then
+		vim.fn.bufload(buffer)
+	end
+	local references, err = M.references_in_buffer({ buffer = buffer, language = language })
+	if created and vim.api.nvim_buf_is_valid(buffer) then
+		vim.api.nvim_buf_delete(buffer, { force = true })
+	end
+	if references then
+		for _, reference in ipairs(references) do
+			reference.path = file_path
+		end
+	end
+	return references, err
+end
+
 local function find_deprecated_file(directory)
 	local ok, iterator = pcall(vim.fs.dir, directory)
 	if not ok or iterator == nil then

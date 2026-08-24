@@ -73,6 +73,12 @@ function M.diagnose_translation_usages(options)
 	return require("minecraft-dev.translation_source").diagnose_buffer(options)
 end
 
+---@param options? { buffer?: integer, root?: string, key?: string, open?: boolean, max_files?: integer }
+---@return table
+function M.find_translation_usages(options)
+	return require("minecraft-dev.translation_usages").find(options)
+end
+
 function M.reload()
 	local cur_config = vim.deepcopy(M.config)
 	local notify = require("minecraft-dev.util.notify")

@@ -8,6 +8,7 @@ function M.setup()
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevNew")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevSortTranslations")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoTranslation")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevFindTranslationUsages")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
@@ -32,6 +33,18 @@ function M.setup()
 	})
 	vim.api.nvim_create_user_command("MinecraftDevGotoTranslation", function(opts)
 		local result = require("minecraft-dev").goto_translation({ key = opts.args ~= "" and opts.args or nil })
+		if result.status == "failed" then
+			local err = result.error or { code = "failed" }
+			notify.notify(vim.log.levels.ERROR, { "translations", err.code }, tostring(err.detail or ""))
+		end
+	end, {
+		nargs = "?",
+		complete = function(lead)
+			return require("minecraft-dev").list_translation_keys({ prefix = lead }).keys
+		end,
+	})
+	vim.api.nvim_create_user_command("MinecraftDevFindTranslationUsages", function(opts)
+		local result = require("minecraft-dev").find_translation_usages({ key = opts.args ~= "" and opts.args or nil })
 		if result.status == "failed" then
 			local err = result.error or { code = "failed" }
 			notify.notify(vim.log.levels.ERROR, { "translations", err.code }, tostring(err.detail or ""))

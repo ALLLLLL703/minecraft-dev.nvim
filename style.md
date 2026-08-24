@@ -355,3 +355,22 @@ require("minecraft-dev").generate({
 
 - 使用 Neovim 内置 Tree-sitter API；Java/Kotlin parser 是可选运行条件。当前 nvim-treesitter 已移除 `ensure_installed`，README 使用 `require("nvim-treesitter").install({ "java", "kotlin" })` 说明安装方式。
 - 测试覆盖 Java/Kotlin 有效调用、同名非 translation 方法、missing/superfluous format、missing key、removed/renamed、动态 key、source goto、parser 缺失与 augroup 幂等。
+
+## 当前实现切片：P2.6 Translation 引用查找
+
+### 扫描与结果
+
+- `find_translation_usages(options)` 从显式 key、translation entry 光标或 P2.5 source reference 光标解析 key，并返回所有 locale entry 与受支持 Java/Kotlin 常量调用。
+- translation 文件沿用 P2.4 根与目录跳过规则；源码只扫描 `.java`、`.kt`、`.kts`，最多 `defaults.translations.source_scan_max_files` 个，避免无界加载大型仓库。
+- 已加载 source buffer 直接复用；未加载文件放入 unlisted scratch buffer 解析，完成后删除，不触发编辑和写盘。parser 缺失按文件记录 warning，其他文件继续。
+- location 统一包含 `path`、零基 `lnum/col/end_lnum/end_col`、`kind` 和 `key`，按 path/位置稳定排序。
+
+### UI 与失败边界
+
+- `:MinecraftDevFindTranslationUsages [key]` 把 locations 写入 quickfix 并打开；无结果与缺少 key 通过本地化消息报告。
+- Lua API 的 `open = false` 不修改 quickfix 或窗口，用于测试和其他插件。
+- 本阶段只查找引用，不执行跨文件 rename。上游 PSI rename 依赖语言级安全重写；Neovim 等价操作应由各语言 LSP rename 负责，translation 跨格式 rename 需未来单独的预览/事务设计。
+
+### 验证
+
+- 场景覆盖 JSON / `.lang` 多 locale、Java/Kotlin source、动态/同名非 translation 排除、光标推断、parser 缺失 warning、扫描上限、稳定排序、quickfix 内容和无结果。

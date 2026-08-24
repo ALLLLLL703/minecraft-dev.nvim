@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | Creator / 平台项目生成 | 已实现 | Paper、Spigot、BungeeCord、Waterfall、Velocity、Sponge、Fabric、Forge、NeoForge、Architectury、自定义 descriptor |
 | Translation 排序 | 已实现 | JSON / `.lang` 的 ascending、descending、like-default、project template |
-| Translation 编辑与诊断 | 待实现 | 重复项、空白 key、默认 locale 对齐、format 参数、deprecated key、跳转/引用 |
+| Translation 编辑与诊断 | 已实现 | 重复项、空白 key、默认 locale 对齐、format 参数、deprecated key、跳转、补全与有界引用查找 |
 | Bukkit / Forge / Fabric 元数据 | 待实现 | `plugin.yml`、`mods.toml`、`fabric.mod.json` 的结构诊断、补全与引用 |
 | Mixin config 与源码智能 | 待实现 | config 诊断、target 跳转、查找 mixin、生成 accessor/overwrite/shadow/soft-implements |
 | MCP mappings / AT / AW / coremod | 待实现 | 查映射、复制/跳转 Access Transformer、Access Widener、coremod target |
@@ -35,7 +35,7 @@
 - [x] 保留 `.lang` 注释、空行和尾部换行
 - [x] 重复 key、空白 key、无效行诊断与安全失败
 - [x] 默认 locale 差异、format 参数和 deprecated key 诊断
-- [ ] translation key 跳转、引用查找和补全入口
+- [x] translation key 跳转、引用查找和补全入口
 - [x] README、配置和帮助文档
 - [x] Neovim MCP 目标测试与完整快速回归
 
@@ -70,6 +70,15 @@
 - [x] 让现有 goto 从 Java / Kotlin 字符串跳到 default locale
 - [x] parser 缺失或动态 key 时安全跳过并返回结构化状态
 - [x] 添加配置、消息、README 与 Java/Kotlin 场景
+- [x] 通过 LSP MCP、Neovim MCP 与静态检查
+
+### P2.6：Translation 引用查找（已完成）
+
+- [x] 汇总项目内所有 locale entry 与受支持 Java/Kotlin 常量调用
+- [x] 从显式 key、translation entry 或源码调用推断查询 key
+- [x] 提供结构化 locations 与 quickfix 命令入口
+- [x] 隔离 parser 缺失、损坏 translation 文件和扫描上限 warnings
+- [x] 添加 README、消息与多文件场景测试
 - [x] 通过 LSP MCP、Neovim MCP 与静态检查
 
 ## 阶段 3：项目元数据与配置文件
@@ -118,3 +127,4 @@
 - P2.3 文件 diagnostics：JSON / `.lang` 位置、默认 locale、format、namespace 隔离和 autocmd 幂等场景均由 Neovim MCP 完整回归覆盖；核心三个 Lua 文件的 LSP MCP diagnostics 为零。
 - P2.4 translation index：多 namespace、损坏文件隔离、completion 排除、光标/显式跳转、命令补全和 augroup 幂等场景通过 Neovim MCP；`translation_index.lua` 与公开入口的 LSP MCP diagnostics 为零。
 - P2.5 source usage：Java/Kotlin call、非 translation 同名方法排除、动态 key 跳过、format 数量、deprecated key、源码 goto 和 parser 缺失场景通过 Neovim MCP；核心四个 Lua 模块的 LSP MCP diagnostics 为零。
+- P2.6 usage lookup：所有 locale 与已加载/磁盘 Java/Kotlin source、两类光标推断、损坏文件隔离、扫描上限、稳定排序和 quickfix 场景通过 Neovim MCP；核心五个 Lua 模块的 LSP MCP diagnostics 为零，`command.lua` 仅保留本阶段外的既有 nil-check warnings。
