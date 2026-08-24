@@ -28,8 +28,8 @@ Now can using to generate
 ## Requirements
 
 - Neovim 0.12+
-- Java and Kotlin Tree-sitter parsers for source translation diagnostics (optional):
-  `require("nvim-treesitter").install({ "java", "kotlin" })`
+- YAML, Java, and Kotlin Tree-sitter parsers for metadata and source translation diagnostics (optional):
+  `require("nvim-treesitter").install({ "yaml", "java", "kotlin" })`
 - Picker support
     - built-in `vim.ui.select` works by default
     - [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) is optional for a richer language picker experience
@@ -66,6 +66,10 @@ require("minecraft-dev").setup({
 			source_diagnostics = true,
 			source_scan_max_files = 1000,
 		},
+		metadata = {
+			diagnostics = true,
+			source_scan_max_files = 1000,
+		},
 		paper = {
 			version = "1.21",
 			language = "java",
@@ -97,6 +101,7 @@ MinecraftDevNew
 MinecraftDevSortTranslations [ascending|descending|like-default|template]
 MinecraftDevGotoTranslation [key]
 MinecraftDevFindTranslationUsages [key]
+MinecraftDevGotoBukkitMain [fully.qualified.Class]
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -137,6 +142,13 @@ left to the language server. Set `source_diagnostics = false` to disable automat
 calls in the quickfix window. Without an explicit key it uses the translation entry or source call under the cursor.
 Source scanning is bounded by `defaults.translations.source_scan_max_files`; Lua callers can use
 `find_translation_usages({ open = false })` to receive sorted structured locations without changing the UI.
+
+With YAML plus Java/Kotlin Tree-sitter parsers installed, `plugin.yml` and `paper-plugin.yml` diagnose missing,
+unresolved, abstract, or provably non-Bukkit `main` classes. Local inheritance chains and unsaved source buffers are
+included; incomplete parser or bounded-scan results become warnings instead of false unresolved errors.
+`:MinecraftDevGotoBukkitMain` jumps to the class declaration, and manifest buffers receive a `completefunc` containing
+concrete Bukkit plugin classes without replacing LSP `omnifunc`. Lua callers can use `diagnose_bukkit_manifest()`,
+`complete_bukkit_main()`, and `goto_bukkit_main({ open = false })`.
 
 When generating a Fabric project, the plugin now asks for:
 

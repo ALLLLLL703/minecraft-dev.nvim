@@ -353,7 +353,7 @@ require("minecraft-dev").generate({
 
 ### 依赖与验证
 
-- 使用 Neovim 内置 Tree-sitter API；Java/Kotlin parser 是可选运行条件。当前 nvim-treesitter 已移除 `ensure_installed`，README 使用 `require("nvim-treesitter").install({ "java", "kotlin" })` 说明安装方式。
+- 使用 Neovim 内置 Tree-sitter API；Java/Kotlin parser 是可选运行条件。当前 nvim-treesitter 已移除 `ensure_installed`，README 使用当前 `require("nvim-treesitter").install(...)` 说明安装方式。
 - 测试覆盖 Java/Kotlin 有效调用、同名非 translation 方法、missing/superfluous format、missing key、removed/renamed、动态 key、source goto、parser 缺失与 augroup 幂等。
 
 ## 当前实现切片：P2.6 Translation 引用查找
@@ -374,3 +374,22 @@ require("minecraft-dev").generate({
 ### 验证
 
 - 场景覆盖 JSON / `.lang` 多 locale、Java/Kotlin source、动态/同名非 translation 排除、光标推断、parser 缺失 warning、扫描上限、稳定排序、quickfix 内容和无结果。
+
+## 当前实现切片：P3.1 Bukkit / Paper 主类引用
+
+### 上游等价边界
+
+- 上游 `PluginYmlInspection` 只检查 Bukkit-like manifest 的 `main` scalar：无法解析时报错，解析后未继承 `org.bukkit.plugin.Plugin` 报错；reference contributor 还提供 concrete inheritor completion、跳转与 IntelliJ rename/move 联动。
+- Neovim 实现覆盖 `plugin.yml` 与 `paper-plugin.yml` 的 `main` 诊断、completion 和跳转。跨语言 rename/move 交给 LSP；manifest 跨文件同步改写不在本切片执行。
+
+### 解析与索引
+
+- YAML 使用可选 Tree-sitter parser 定位顶层 `main` pair 和 scalar 精确范围；parser 缺失返回结构化 `parser_unavailable`，不猜测复杂 YAML。
+- `jvm_index` 扫描项目 `.java`、`.kt`、`.kts`，复用已加载未保存 buffer，其他文件用 unlisted scratch buffer 解析；目录跳过与文件上限沿用有界扫描原则。
+- class entry 包含 FQN、path、声明范围、abstract 标记和直接父类型。Bukkit 有效性沿本地继承链查找 `org.bukkit.plugin.Plugin` / `JavaPlugin`；无法证明的外部父类不误报为错误，而是返回 warning。
+- completion 只返回可证明为 concrete Bukkit Plugin 的项目 class；跳转使用精确 class 声明位置和稳定 path 排序。
+
+### 生命周期与验证
+
+- 独立 `minecraft-dev.metadata.bukkit` diagnostic namespace，只在目标 manifest 的 BufEnter/BufWritePost/TextChanged/TextChangedI 更新；关闭配置时只清理自身 namespace。
+- 场景覆盖 Java/Kotlin 主类、未保存源码、缺少/无法解析/wrong type、抽象类排除、parser 缺失、completion、跳转和 setup 幂等。

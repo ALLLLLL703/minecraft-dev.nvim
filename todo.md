@@ -90,6 +90,16 @@
 - [ ] 为确定字段提供补全、hover 或跳转入口
 - [ ] 每种文件均添加 fixture、错误路径和 Neovim MCP 场景
 
+### P3.1：Bukkit / Paper 主类引用（已完成）
+
+- [x] 对齐上游 `PluginYmlInspection` 与 `PluginYmlReferenceContributor` 的 `main` 语义
+- [x] 建立可复用的 Java / Kotlin 项目 class index 与本地继承链解析
+- [x] 诊断缺少、无效、无法解析或非 Bukkit Plugin 的 `main`
+- [x] 提供 main class completion、跳转和公开 Lua API
+- [x] 为 `plugin.yml` / `paper-plugin.yml` 注册隔离 diagnostics 生命周期
+- [x] 添加配置、消息、README 与 Java/Kotlin/无 parser 场景
+- [x] 通过 LSP MCP、Neovim MCP 与静态检查
+
 ## 阶段 4：NBT 与资源编辑
 
 - [ ] 确定维护型 NBT 依赖或记录自实现边界
@@ -128,3 +138,4 @@
 - P2.4 translation index：多 namespace、损坏文件隔离、completion 排除、光标/显式跳转、命令补全和 augroup 幂等场景通过 Neovim MCP；`translation_index.lua` 与公开入口的 LSP MCP diagnostics 为零。
 - P2.5 source usage：Java/Kotlin call、非 translation 同名方法排除、动态 key 跳过、format 数量、deprecated key、源码 goto 和 parser 缺失场景通过 Neovim MCP；核心四个 Lua 模块的 LSP MCP diagnostics 为零。
 - P2.6 usage lookup：所有 locale 与已加载/磁盘 Java/Kotlin source、两类光标推断、损坏文件隔离、扫描上限、稳定排序和 quickfix 场景通过 Neovim MCP；核心五个 Lua 模块的 LSP MCP diagnostics 为零，`command.lua` 仅保留本阶段外的既有 nil-check warnings。
+- P3.1 Bukkit/Paper main：Java/Kotlin、本地继承链、抽象/错误/未知类型、未保存 buffer、扫描截断、quoted YAML、completion、goto、parser 缺失和 augroup 幂等通过 Neovim MCP；`jvm_index.lua`、`bukkit_metadata.lua`、配置和公开入口的 LSP MCP diagnostics 为零。

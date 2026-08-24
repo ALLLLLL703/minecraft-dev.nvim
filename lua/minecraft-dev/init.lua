@@ -9,6 +9,7 @@ function M.setup(opts)
 	require("minecraft-dev.translation_diagnostics").setup()
 	require("minecraft-dev.translation_index").setup()
 	require("minecraft-dev.translation_source").setup()
+	require("minecraft-dev.bukkit_metadata").setup()
 end
 
 ---@param spec table
@@ -58,6 +59,7 @@ end
 ---@param options? { buffer?: integer, root?: string, prefix?: string }
 ---@return table
 function M.complete_translations(options)
+	---@diagnostic disable-next-line: param-type-mismatch
 	return require("minecraft-dev.translation_index").complete(options)
 end
 
@@ -77,6 +79,26 @@ end
 ---@return table
 function M.find_translation_usages(options)
 	return require("minecraft-dev.translation_usages").find(options)
+end
+
+---@param options? { buffer?: integer, root?: string, language?: string, max_files?: integer }
+---@return table
+function M.diagnose_bukkit_manifest(options)
+	return require("minecraft-dev.bukkit_metadata").diagnose_buffer(options)
+end
+
+---@param options? { buffer?: integer, root?: string, prefix?: string, max_files?: integer }
+---@return table
+function M.complete_bukkit_main(options)
+	---@diagnostic disable-next-line: param-type-mismatch
+	return require("minecraft-dev.bukkit_metadata").complete(options)
+end
+
+---@param options? { buffer?: integer, root?: string, main?: string, open?: boolean, max_files?: integer }
+---@return table
+function M.goto_bukkit_main(options)
+	---@diagnostic disable-next-line: param-type-mismatch
+	return require("minecraft-dev.bukkit_metadata").goto_main(options)
 end
 
 function M.reload()

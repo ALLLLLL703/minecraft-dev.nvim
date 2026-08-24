@@ -3472,6 +3472,88 @@ local function test_translation_source_diagnostics_and_navigation()
 	vim.fn.delete(root, "rf")
 end
 
+local function test_bukkit_manifest_main_references()
+	local minecraft_dev = require("minecraft-dev")
+	local normalized = config.normalize({ defaults = { metadata = { diagnostics = "yes", source_scan_max_files = 0 } } })
+	assert_equal(normalized.defaults.metadata.diagnostics, true, "invalid metadata diagnostics config should normalize")
+	assert_equal(normalized.defaults.metadata.source_scan_max_files, 1000, "invalid metadata scan limit should normalize")
+
+	local root = vim.fn.tempname()
+	vim.fn.mkdir(root .. "/.git", "p")
+	local java = root .. "/src/main/java/test"
+	local kotlin = root .. "/src/main/kotlin/test"
+	local resources = root .. "/src/main/resources"
+	vim.fn.mkdir(java, "p")
+	vim.fn.mkdir(kotlin, "p")
+	vim.fn.mkdir(resources, "p")
+	vim.fn.writefile({ "package test;", "import org.bukkit.plugin.java.JavaPlugin;", "public abstract class Base extends JavaPlugin {}" }, java .. "/Base.java")
+	vim.fn.writefile({ "package test;", "public final class Good extends Base {}" }, java .. "/Good.java")
+	vim.fn.writefile({ "package test;", "public final class Bad {}" }, java .. "/Bad.java")
+	vim.fn.writefile({ "package test;", "import org.bukkit.plugin.java.JavaPlugin;", "public abstract class AbstractPlugin extends JavaPlugin {}" }, java .. "/AbstractPlugin.java")
+	vim.fn.writefile({ "package test;", "public final class Unknown extends ExternalBase {}" }, java .. "/Unknown.java")
+	vim.fn.writefile({ "package test", "import org.bukkit.plugin.java.JavaPlugin", "class KGood : JavaPlugin()" }, kotlin .. "/KGood.kt")
+	local manifest_path = resources .. "/plugin.yml"
+	vim.fn.writefile({ "name: Demo", "main: test.Good", "version: 1.0" }, manifest_path)
+	local manifest = vim.fn.bufadd(manifest_path)
+	vim.fn.bufload(manifest)
+	vim.bo[manifest].filetype = "yaml"
+
+	local result = minecraft_dev.diagnose_bukkit_manifest({ buffer = manifest, root = root })
+	assert_equal(result.status, "diagnosed", "plugin.yml should receive Bukkit main diagnostics")
+	assert_equal(#result.diagnostics, 0, "local inheritance chains ending in JavaPlugin should be valid")
+	local completion = minecraft_dev.complete_bukkit_main({ buffer = manifest, root = root })
+	local words = vim.tbl_map(function(item) return item.word end, completion.items)
+	assert_truthy(vim.tbl_contains(words, "test.Good"), "Java Bukkit main classes should complete")
+	assert_truthy(vim.tbl_contains(words, "test.KGood"), "Kotlin Bukkit main classes should complete")
+	assert_truthy(not vim.tbl_contains(words, "test.AbstractPlugin"), "abstract Bukkit classes should not complete")
+	local target = minecraft_dev.goto_bukkit_main({ buffer = manifest, root = root, open = false })
+	assert_equal(target.locations[1].path, java .. "/Good.java", "Bukkit main goto should resolve the class declaration")
+	local truncated = minecraft_dev.diagnose_bukkit_manifest({ buffer = manifest, root = root, max_files = 1 })
+	assert_equal(truncated.diagnostics[1].code, "main_resolution_incomplete", "bounded class scans should not report false unresolved errors")
+	local paper_path = resources .. "/paper-plugin.yml"
+	vim.fn.writefile({ "name: Demo", "main: 'test.KGood'" }, paper_path)
+	local paper = vim.fn.bufadd(paper_path)
+	vim.fn.bufload(paper)
+	vim.bo[paper].filetype = "yaml"
+	assert_equal(#minecraft_dev.diagnose_bukkit_manifest({ buffer = paper, root = root }).diagnostics, 0, "paper-plugin.yml and quoted Kotlin main classes should be supported")
+
+	local function diagnostic_for(main)
+		vim.api.nvim_buf_set_lines(manifest, 0, -1, false, main and { "name: Demo", "main: " .. main } or { "name: Demo" })
+		return minecraft_dev.diagnose_bukkit_manifest({ buffer = manifest, root = root }).diagnostics[1]
+	end
+	assert_equal(diagnostic_for("test.Missing").code, "main_unresolved", "missing main classes should be diagnosed")
+	assert_equal(diagnostic_for("test.Bad").code, "main_wrong_type", "non-plugin main classes should be diagnosed")
+	assert_equal(diagnostic_for("test.AbstractPlugin").code, "main_abstract", "abstract main classes should be diagnosed")
+	assert_equal(diagnostic_for("test.Unknown").code, "main_type_unverified", "unknown external parent chains should warn without a false error")
+	assert_equal(diagnostic_for(nil).code, "main_required", "missing main fields should be diagnosed")
+
+	local unsaved = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_buf_set_name(unsaved, java .. "/Unsaved.java")
+	vim.bo[unsaved].filetype = "java"
+	vim.api.nvim_buf_set_lines(unsaved, 0, -1, false, { "package test;", "import org.bukkit.plugin.java.JavaPlugin;", "public final class Unsaved extends JavaPlugin {}" })
+	local unsaved_words = vim.tbl_map(function(item) return item.word end, minecraft_dev.complete_bukkit_main({ buffer = manifest, root = root }).items)
+	assert_truthy(vim.tbl_contains(unsaved_words, "test.Unsaved"), "class completion should include unsaved source buffers")
+	assert_equal(
+		minecraft_dev.diagnose_bukkit_manifest({ buffer = manifest, root = root, language = "missing-parser" }).error.code,
+		"parser_unavailable",
+		"missing YAML parsers should return a structured skipped result"
+	)
+
+	vim.api.nvim_set_current_buf(manifest)
+	vim.cmd("doautocmd BufEnter")
+	assert_equal(vim.bo[manifest].completefunc, "v:lua.MinecraftDevBukkitMainComplete", "Bukkit manifests should receive main completion")
+	assert_truthy(vim.fn.exists(":MinecraftDevGotoBukkitMain") == 2, "setup should register Bukkit main navigation")
+	minecraft_dev.setup()
+	local first_count = #vim.api.nvim_get_autocmds({ group = "MinecraftDevBukkitMetadata" })
+	minecraft_dev.setup()
+	assert_equal(#vim.api.nvim_get_autocmds({ group = "MinecraftDevBukkitMetadata" }), first_count, "metadata setup should be idempotent")
+
+	vim.api.nvim_buf_delete(manifest, { force = true })
+	vim.api.nvim_buf_delete(paper, { force = true })
+	vim.api.nvim_buf_delete(unsaved, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -3533,6 +3615,7 @@ local function run()
 	test_translation_file_diagnostics()
 	test_translation_index_navigation_and_completion()
 	test_translation_source_diagnostics_and_navigation()
+	test_bukkit_manifest_main_references()
 	print("test_refactor.lua: ok")
 end
 

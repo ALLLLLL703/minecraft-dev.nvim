@@ -32,6 +32,10 @@ M.default_config = {
 				"StatCollector.translateToLocalFormatted",
 			},
 		},
+		metadata = {
+			diagnostics = true,
+			source_scan_max_files = 1000,
+		},
 		paper = {
 			version = "1.21",
 			language = "java",
@@ -155,6 +159,19 @@ M.default_config = {
 			buffer_unloaded = "Translation buffer is not loaded.",
 			failed = "Failed to sort Minecraft translations: %s",
 		},
+		metadata = {
+			main_required = "Bukkit plugin manifest requires a main class.",
+			main_duplicate = "Bukkit plugin manifest defines main more than once.",
+			main_invalid = "Invalid Bukkit plugin main class: %s",
+			main_unresolved = "Bukkit plugin main class was not found: %s",
+			main_resolution_incomplete = "Could not fully scan project classes for Bukkit main: %s",
+			main_abstract = "Bukkit plugin main class must be concrete: %s",
+			main_wrong_type = "Bukkit plugin main class must implement org.bukkit.plugin.Plugin: %s",
+			main_type_unverified = "Could not verify the Bukkit plugin superclass chain: %s",
+			invalid_yaml = "Invalid Bukkit plugin YAML.",
+			not_bukkit_manifest = "Current buffer is not plugin.yml or paper-plugin.yml.",
+			parser_unavailable = "Required Tree-sitter parser is unavailable: %s",
+		},
 		reload = {
 			success = "Successfully reloaded minecraft-dev!",
 			module_reloaded = "%s reloaded",
@@ -246,6 +263,22 @@ function M.normalize(opts)
 				break
 			end
 		end
+	end
+	if type(normalized.defaults.metadata) ~= "table" then
+		---@diagnostic disable-next-line: inject-field, undefined-field
+		normalized.defaults.metadata = vim.deepcopy(M.default_config.defaults.metadata)
+	end
+	local metadata = normalized.defaults.metadata
+	if type(metadata.diagnostics) ~= "boolean" then
+		metadata.diagnostics = true
+	end
+	if
+		type(metadata.source_scan_max_files) ~= "number"
+		or metadata.source_scan_max_files < 1
+		or metadata.source_scan_max_files % 1 ~= 0
+	then
+		---@diagnostic disable-next-line: undefined-field
+		metadata.source_scan_max_files = M.default_config.defaults.metadata.source_scan_max_files
 	end
 	return normalized
 end
