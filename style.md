@@ -393,3 +393,22 @@ require("minecraft-dev").generate({
 
 - 独立 `minecraft-dev.metadata.bukkit` diagnostic namespace，只在目标 manifest 的 BufEnter/BufWritePost/TextChanged/TextChangedI 更新；关闭配置时只清理自身 namespace。
 - 场景覆盖 Java/Kotlin 主类、未保存源码、缺少/无法解析/wrong type、抽象类排除、parser 缺失、completion、跳转和 setup 幂等。
+
+## 当前实现切片：P3.2 Bukkit / Paper manifest 结构与依赖
+
+### YAML 文档模型
+
+- `yaml_tree.parse_buffer()` 只依赖 Neovim Tree-sitter，产出 `mapping`、`sequence`、`scalar` 节点；每个节点保留零基范围，mapping 同时保留有序 entries 与按 key 索引，因此重复 key 不会在转换时丢失。
+- quoted scalar 始终为 string；plain `true` / `false` 识别为 boolean，其余标量保留原始文本，避免把版本号等 manifest 字段错误强制成 number。
+- alias、tag、复杂 key 或 parser error 无法安全归一时返回结构化 warning/error，不使用正则猜测嵌套 YAML。
+
+### 校验边界
+
+- `plugin.yml` 检查 `name`、`version`、`main`，以及 `api-version`、commands、permissions 和 legacy dependency list 的确定结构；不枚举未来可扩展的未知顶层字段。
+- legacy `depend`、`softdepend`、`loadbefore` 必须为 scalar sequence，诊断重复项与对自身 name 的依赖。
+- `paper-plugin.yml` 额外检查 `dependencies.bootstrap` / `dependencies.server` mapping；每项的 `load` 限于 `BEFORE` / `AFTER` / `OMIT`，`required` 与 `join-classpath` 必须为 boolean。
+- 这里只检查本文件内部结构；依赖插件是否真实安装属于服务器运行环境，不能在编辑期可靠判定。
+
+### 验证
+
+- 场景覆盖 flow/block sequence、quoted version、重复 key、缺失字段、错误容器类型、自依赖、Paper 两阶段依赖、错误 enum/boolean 和 malformed YAML。

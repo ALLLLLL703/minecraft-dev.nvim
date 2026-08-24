@@ -3511,7 +3511,7 @@ local function test_bukkit_manifest_main_references()
 	local truncated = minecraft_dev.diagnose_bukkit_manifest({ buffer = manifest, root = root, max_files = 1 })
 	assert_equal(truncated.diagnostics[1].code, "main_resolution_incomplete", "bounded class scans should not report false unresolved errors")
 	local paper_path = resources .. "/paper-plugin.yml"
-	vim.fn.writefile({ "name: Demo", "main: 'test.KGood'" }, paper_path)
+	vim.fn.writefile({ "name: Demo", "version: '1.0'", "main: 'test.KGood'" }, paper_path)
 	local paper = vim.fn.bufadd(paper_path)
 	vim.fn.bufload(paper)
 	vim.bo[paper].filetype = "yaml"
@@ -3551,6 +3551,101 @@ local function test_bukkit_manifest_main_references()
 	vim.api.nvim_buf_delete(manifest, { force = true })
 	vim.api.nvim_buf_delete(paper, { force = true })
 	vim.api.nvim_buf_delete(unsaved, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
+function _G.MinecraftDevTestBukkitManifestStructureAndDependencies()
+	local minecraft_dev = require("minecraft-dev")
+	local root = vim.fn.tempname()
+	vim.fn.mkdir(root .. "/.git", "p")
+	local java = root .. "/src/main/java/test"
+	local resources = root .. "/src/main/resources"
+	vim.fn.mkdir(java, "p")
+	vim.fn.mkdir(resources, "p")
+	vim.fn.writefile({ "package test;", "import org.bukkit.plugin.java.JavaPlugin;", "public final class Good extends JavaPlugin {}" }, java .. "/Good.java")
+
+	local function manifest_buffer(name, lines)
+		local path = resources .. "/" .. name
+		vim.fn.writefile(lines, path)
+		local buffer = vim.fn.bufadd(path)
+		vim.fn.bufload(buffer)
+		vim.bo[buffer].filetype = "yaml"
+		return buffer
+	end
+	local plugin = manifest_buffer("plugin.yml", {
+		"name: Demo",
+		"name: Duplicate",
+		"version: true",
+		"main: test.Good",
+		"api-version: latest",
+		"depend: [Demo, Vault, Vault, { bad: value }]",
+		"commands: []",
+		"permissions: invalid",
+	})
+	local parsed = require("minecraft-dev.yaml_tree").parse_buffer({ buffer = plugin })
+	assert_equal(parsed.status, "parsed", "YAML Tree-sitter model should parse Bukkit manifests")
+	assert_equal(#parsed.document.by_key.name, 2, "YAML model should preserve duplicate mapping keys")
+	local result = minecraft_dev.diagnose_bukkit_manifest({ buffer = plugin, root = root })
+	local by_code = {}
+	for _, item in ipairs(result.diagnostics) do by_code[item.code] = item end
+	for _, code in ipairs({
+		"field_duplicate",
+		"field_scalar_required",
+		"api_version_invalid",
+		"dependency_self",
+		"dependency_duplicate",
+		"dependency_name_invalid",
+		"field_mapping_required",
+	}) do
+		assert_truthy(by_code[code] ~= nil, "plugin.yml structure should diagnose " .. code)
+	end
+
+	local paper = manifest_buffer("paper-plugin.yml", {
+		"name: Demo",
+		"version: '1.0'",
+		"main: test.Good",
+		"api-version: '1.21'",
+		"dependencies:",
+		"  bootstrap: []",
+		"  server:",
+		"    Demo:",
+		"      load: SIDEWAYS",
+		"      required: 'yes'",
+		"      join-classpath: 1",
+	})
+	local paper_result = minecraft_dev.diagnose_bukkit_manifest({ buffer = paper, root = root })
+	local paper_codes = {}
+	for _, item in ipairs(paper_result.diagnostics) do paper_codes[item.code] = item end
+	for _, code in ipairs({
+		"paper_dependency_phase_invalid",
+		"dependency_self",
+		"paper_dependency_load_invalid",
+		"paper_dependency_boolean_invalid",
+	}) do
+		assert_truthy(paper_codes[code] ~= nil, "paper-plugin.yml dependencies should diagnose " .. code)
+	end
+
+	vim.api.nvim_buf_set_lines(paper, 0, -1, false, {
+		"name: Demo",
+		"version: '1.0'",
+		"main: test.Good",
+		"dependencies:",
+		"  bootstrap:",
+		"    RegistryPlugin:",
+		"      load: BEFORE",
+		"      required: true",
+		"      join-classpath: false",
+		"  server:",
+		"    Vault:",
+		"      load: AFTER",
+		"      required: false",
+	})
+	assert_equal(#minecraft_dev.diagnose_bukkit_manifest({ buffer = paper, root = root }).diagnostics, 0, "valid Paper dependency phases should pass")
+	vim.api.nvim_buf_set_lines(plugin, 0, -1, false, { "name: [" })
+	assert_equal(minecraft_dev.diagnose_bukkit_manifest({ buffer = plugin, root = root }).error.code, "invalid_yaml", "malformed YAML should fail structurally")
+
+	vim.api.nvim_buf_delete(plugin, { force = true })
+	vim.api.nvim_buf_delete(paper, { force = true })
 	vim.fn.delete(root, "rf")
 end
 
@@ -3616,6 +3711,8 @@ local function run()
 	test_translation_index_navigation_and_completion()
 	test_translation_source_diagnostics_and_navigation()
 	test_bukkit_manifest_main_references()
+	_G.MinecraftDevTestBukkitManifestStructureAndDependencies()
+	_G.MinecraftDevTestBukkitManifestStructureAndDependencies = nil
 	print("test_refactor.lua: ok")
 end
 

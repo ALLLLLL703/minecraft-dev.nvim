@@ -150,6 +150,11 @@ included; incomplete parser or bounded-scan results become warnings instead of f
 concrete Bukkit plugin classes without replacing LSP `omnifunc`. Lua callers can use `diagnose_bukkit_manifest()`,
 `complete_bukkit_main()`, and `goto_bukkit_main({ open = false })`.
 
+The same diagnostics validate manifest structure without requiring a running server: required scalar fields,
+`api-version`, command and permission mappings, legacy dependency lists, duplicate or self dependencies, and Paper
+`bootstrap`/`server` dependency options. Paper `load` accepts `BEFORE`, `AFTER`, or `OMIT`; `required` and
+`join-classpath` must be YAML booleans. Unknown extension fields remain allowed.
+
 When generating a Fabric project, the plugin now asks for:
 
 - language: `java` or `kotlin`

@@ -100,6 +100,16 @@
 - [x] 添加配置、消息、README 与 Java/Kotlin/无 parser 场景
 - [x] 通过 LSP MCP、Neovim MCP 与静态检查
 
+### P3.2：Bukkit / Paper manifest 结构与依赖（已完成）
+
+- [x] 固定 Paper 官方 `plugin.yml` / `paper-plugin.yml` 字段与依赖语义
+- [x] 建立保留位置、类型和重复 key 的通用 YAML Tree-sitter 文档模型
+- [x] 诊断必填字段、标量/映射/序列类型和 `api-version` 语法
+- [x] 诊断 depend/softdepend/loadbefore 重复、自依赖与错误 item
+- [x] 诊断 Paper bootstrap/server dependency 的 load/required/join-classpath
+- [x] 添加配置消息、README 与两类 manifest 场景
+- [x] 通过 LSP MCP、Neovim MCP 与静态检查
+
 ## 阶段 4：NBT 与资源编辑
 
 - [ ] 确定维护型 NBT 依赖或记录自实现边界
@@ -139,3 +149,4 @@
 - P2.5 source usage：Java/Kotlin call、非 translation 同名方法排除、动态 key 跳过、format 数量、deprecated key、源码 goto 和 parser 缺失场景通过 Neovim MCP；核心四个 Lua 模块的 LSP MCP diagnostics 为零。
 - P2.6 usage lookup：所有 locale 与已加载/磁盘 Java/Kotlin source、两类光标推断、损坏文件隔离、扫描上限、稳定排序和 quickfix 场景通过 Neovim MCP；核心五个 Lua 模块的 LSP MCP diagnostics 为零，`command.lua` 仅保留本阶段外的既有 nil-check warnings。
 - P3.1 Bukkit/Paper main：Java/Kotlin、本地继承链、抽象/错误/未知类型、未保存 buffer、扫描截断、quoted YAML、completion、goto、parser 缺失和 augroup 幂等通过 Neovim MCP；`jvm_index.lua`、`bukkit_metadata.lua`、配置和公开入口的 LSP MCP diagnostics 为零。
+- P3.2 Bukkit/Paper manifest：通用 YAML Tree-sitter model、重复 key、字段类型、legacy dependency、自依赖、Paper bootstrap/server load/boolean 与 malformed YAML 场景通过 Neovim MCP；三个生产 Lua 模块的 LSP MCP diagnostics 为零，Stylua 与目标 diff 检查通过。

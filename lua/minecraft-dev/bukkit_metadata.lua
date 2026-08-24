@@ -5,64 +5,8 @@ local namespace = vim.api.nvim_create_namespace("minecraft-dev.metadata.bukkit")
 local COMPLETEFUNC = "v:lua.MinecraftDevBukkitMainComplete"
 local MANIFESTS = { ["plugin.yml"] = true, ["paper-plugin.yml"] = true }
 
-local function buffer_content(buffer)
-	local content = table.concat(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), "\n")
-	if vim.bo[buffer].eol then
-		content = content .. "\n"
-	end
-	return content
-end
-
 local function manifest_buffer(buffer)
 	return MANIFESTS[vim.fs.basename(vim.api.nvim_buf_get_name(buffer))] == true
-end
-
-local function decode_scalar(text)
-	text = vim.trim(text)
-	if text:sub(1, 1) == '"' and text:sub(-1) == '"' then
-		local ok, decoded = pcall(vim.json.decode, text)
-		return ok and decoded or nil
-	end
-	if text:sub(1, 1) == "'" and text:sub(-1) == "'" then
-		return text:sub(2, -2):gsub("''", "'")
-	end
-	return vim.trim((text:gsub("%s+#.*$", "")))
-end
-
-local function collect_main_pairs(node, buffer, output)
-	if node:type() == "block_mapping_pair" then
-		local row, col = node:range()
-		if col == 0 then
-			local children = {}
-			for child in node:iter_children() do
-				if child:named() then
-					table.insert(children, child)
-				end
-			end
-			if children[1] and vim.trim(vim.treesitter.get_node_text(children[1], buffer)) == "main" then
-				local value_node = children[2]
-				local value = value_node and decode_scalar(vim.treesitter.get_node_text(value_node, buffer)) or nil
-				local start_row, start_col, end_row, end_col
-				if value_node then
-					start_row, start_col, end_row, end_col = value_node:range()
-				else
-					start_row, start_col, end_row, end_col = node:range()
-				end
-				table.insert(output, {
-					value = value,
-					lnum = start_row or row,
-					col = start_col or col,
-					end_lnum = end_row or row,
-					end_col = end_col or (col + 4),
-				})
-			end
-		end
-	end
-	for child in node:iter_children() do
-		if child:named() then
-			collect_main_pairs(child, buffer, output)
-		end
-	end
 end
 
 ---@param options? { buffer?: integer, language?: string }
@@ -76,24 +20,25 @@ function M.inspect(options)
 	if not manifest_buffer(buffer) then
 		return { status = "skipped", error = { code = "not_bukkit_manifest" }, entries = {} }
 	end
-	local language = options.language or "yaml"
-	local ok, parser = pcall(vim.treesitter.get_parser, buffer, language)
-	if not ok or parser == nil then
-		return { status = "skipped", error = { code = "parser_unavailable", detail = language }, entries = {} }
+	local parsed = require("minecraft-dev.yaml_tree").parse_buffer({ buffer = buffer, language = options.language })
+	if parsed.status ~= "parsed" then
+		return vim.tbl_extend("force", parsed, { entries = {} })
 	end
-	local parsed, trees = pcall(function()
-		return parser:parse()
-	end)
-	if not parsed or trees == nil or trees[1] == nil then
-		return { status = "skipped", error = { code = "parser_unavailable", detail = language }, entries = {} }
-	end
-	local root = trees[1]:root()
-	if root:has_error() then
+	if parsed.document.kind ~= "mapping" then
 		return { status = "failed", error = { code = "invalid_yaml" }, entries = {} }
 	end
 	local entries = {}
-	collect_main_pairs(root, buffer, entries)
-	return { status = "inspected", buffer = buffer, entries = entries, content = buffer_content(buffer) }
+	for _, entry in ipairs(parsed.document.by_key.main or {}) do
+		local value = entry.value
+		table.insert(entries, {
+			value = value and value.kind == "scalar" and value.value or nil,
+			lnum = value and value.lnum or entry.lnum,
+			col = value and value.col or entry.col,
+			end_lnum = value and value.end_lnum or entry.end_lnum,
+			end_col = value and value.end_col or entry.end_col,
+		})
+	end
+	return { status = "inspected", buffer = buffer, entries = entries, document = parsed.document }
 end
 
 local function message(code, detail)
@@ -147,6 +92,126 @@ local function incomplete_index(warnings)
 		end
 	end
 	return false
+end
+
+local function entry_location(entry)
+	return entry.value or entry.key_node or entry
+end
+
+local function scalar(entry)
+	if entry and entry.value and entry.value.kind == "scalar" then
+		return entry.value.value
+	end
+	return nil
+end
+
+local function validate_manifest_structure(document, manifest_name)
+	local diagnostics = {}
+	local function add(code, entry, detail)
+		table.insert(diagnostics, diagnostic(code, entry and entry_location(entry) or nil, detail))
+	end
+
+	for key, entries in pairs(document.by_key) do
+		if key ~= "main" and #entries > 1 then
+			for index = 2, #entries do
+				add("field_duplicate", entries[index], key)
+			end
+		end
+	end
+	for _, key in ipairs({ "name", "version" }) do
+		local entry = document.by_key[key] and document.by_key[key][1]
+		if entry == nil then
+			add("field_required", nil, key)
+		else
+			local value = scalar(entry)
+			if type(value) ~= "string" or vim.trim(value) == "" then
+				add("field_scalar_required", entry, key)
+			end
+		end
+	end
+
+	local api_version = document.by_key["api-version"] and document.by_key["api-version"][1]
+	if api_version then
+		local value = scalar(api_version)
+		if type(value) ~= "string" or not value:match("^%d+%.%d+$") then
+			add("api_version_invalid", api_version, tostring(value or ""))
+		end
+	end
+	for _, key in ipairs({ "commands", "permissions" }) do
+		local entry = document.by_key[key] and document.by_key[key][1]
+		if entry and (entry.value == nil or entry.value.kind ~= "mapping") then
+			add("field_mapping_required", entry, key)
+		end
+	end
+
+	local plugin_name_entry = document.by_key.name and document.by_key.name[1]
+	local plugin_name = scalar(plugin_name_entry)
+	for _, key in ipairs({ "depend", "softdepend", "loadbefore" }) do
+		local entry = document.by_key[key] and document.by_key[key][1]
+		if entry then
+			if entry.value == nil or entry.value.kind ~= "sequence" then
+				add("field_sequence_required", entry, key)
+			else
+				local seen = {}
+				for _, item in ipairs(entry.value.items) do
+					local value = item.kind == "scalar" and item.value or nil
+					if type(value) ~= "string" or vim.trim(value) == "" then
+						table.insert(diagnostics, diagnostic("dependency_name_invalid", item, key))
+					elseif seen[value] then
+						table.insert(diagnostics, diagnostic("dependency_duplicate", item, value))
+					elseif type(plugin_name) == "string" and value == plugin_name then
+						table.insert(diagnostics, diagnostic("dependency_self", item, value))
+					end
+					if type(value) == "string" then
+						seen[value] = true
+					end
+				end
+			end
+		end
+	end
+
+	if manifest_name == "paper-plugin.yml" then
+		local dependencies = document.by_key.dependencies and document.by_key.dependencies[1]
+		if dependencies and (dependencies.value == nil or dependencies.value.kind ~= "mapping") then
+			add("field_mapping_required", dependencies, "dependencies")
+		elseif dependencies then
+			for _, phase in ipairs({ "bootstrap", "server" }) do
+				local phase_entry = dependencies.value.by_key[phase] and dependencies.value.by_key[phase][1]
+				if phase_entry and (phase_entry.value == nil or phase_entry.value.kind ~= "mapping") then
+					add("paper_dependency_phase_invalid", phase_entry, phase)
+				elseif phase_entry then
+					for _, dependency in ipairs(phase_entry.value.entries) do
+						if type(plugin_name) == "string" and dependency.key == plugin_name then
+							add("dependency_self", dependency, dependency.key)
+						end
+						if dependency.value == nil or dependency.value.kind ~= "mapping" then
+							add("paper_dependency_invalid", dependency, dependency.key)
+						else
+							local load = dependency.value.by_key.load and dependency.value.by_key.load[1]
+							local load_value = scalar(load)
+							if
+								load
+								and (
+									type(load_value) ~= "string"
+									or not ({ BEFORE = true, AFTER = true, OMIT = true })[load_value]
+								)
+							then
+								add("paper_dependency_load_invalid", load, tostring(load_value or ""))
+							end
+							for _, option in ipairs({ "required", "join-classpath" }) do
+								local option_entry = dependency.value.by_key[option]
+									and dependency.value.by_key[option][1]
+								if option_entry and type(scalar(option_entry)) ~= "boolean" then
+									add("paper_dependency_boolean_invalid", option_entry, option)
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	return diagnostics
 end
 
 ---@param options? { buffer?: integer, root?: string, language?: string, max_files?: integer }
@@ -206,6 +271,10 @@ function M.diagnose_buffer(options)
 			end
 		end
 	end
+	vim.list_extend(
+		diagnostics,
+		validate_manifest_structure(inspected.document, vim.fs.basename(vim.api.nvim_buf_get_name(buffer)))
+	)
 	vim.diagnostic.set(namespace, buffer, diagnostics)
 	return {
 		status = "diagnosed",
