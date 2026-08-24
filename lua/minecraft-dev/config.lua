@@ -18,6 +18,7 @@ M.default_config = {
 			order = "ascending",
 			default_locale = "en_us",
 			indent = "  ",
+			template_path = nil,
 		},
 		paper = {
 			version = "1.21",
@@ -118,9 +119,12 @@ M.default_config = {
 			invalid_json = "Invalid translation JSON: %s",
 			invalid_root = "Translation JSON must contain a root object.",
 			invalid_value = "Translation value must be a string: %s",
-			duplicate_key = "Translation JSON contains a duplicate key: %s",
-			not_translation_file = "Current buffer is not a Minecraft translation JSON file: %s",
+			duplicate_key = "Translation file contains a duplicate key: %s",
+			empty_key = "Translation key is empty at line %s.",
+			invalid_lang = "Invalid legacy translation syntax at line %s.",
+			not_translation_file = "Current buffer is not a Minecraft translation file: %s",
 			missing_default = "Default locale translation file was not found: %s",
+			missing_template = "Minecraft translation sorting template was not found: %s",
 			buffer_unloaded = "Translation buffer is not loaded.",
 			failed = "Failed to sort Minecraft translations: %s",
 		},
@@ -189,6 +193,9 @@ function M.normalize(opts)
 	end
 	if type(translations.indent) ~= "string" or translations.indent == "" or translations.indent:find("[\r\n]") then
 		translations.indent = M.default_config.defaults.translations.indent
+	end
+	if type(translations.template_path) ~= "string" or vim.trim(translations.template_path) == "" then
+		translations.template_path = nil
 	end
 	return normalized
 end

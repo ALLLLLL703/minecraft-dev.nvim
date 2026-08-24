@@ -269,3 +269,25 @@ require("minecraft-dev").generate({
 - 默认 locale：目标文件按 `en_us` 顺序排列，缺失于默认文件的 key 按 ascending 追加；默认文件缺失返回结构化错误。
 - buffer/命令：合法 translation buffer 被替换并保持末尾换行；普通 JSON 路径拒绝；命令注册、默认模式和补全可用。
 - 通过 Neovim MCP 运行目标测试、完整 `test/test_refactor.lua`、插件加载和用户命令冒烟测试。
+
+## 当前实现切片：P2.2 Translation `.lang` 与项目模板排序
+
+### 行为边界
+
+- `assets/<namespace>/lang/<locale>.lang` 与现代 JSON translation 共用 `sort_translations()` 和 `:MinecraftDevSortTranslations`；格式由当前 buffer 路径决定。
+- `.lang` 的有效 translation 行以首个 `=` 分隔 key 与 value。空行和首个非空字符为 `#` 的注释行属于布局；其他行安全失败，不静默重写未知语法。
+- 重复 key、空白 key 和缺少 `=` 的行返回结构化错误。排序成功时保留每个 translation 紧邻其上的连续注释，并保留文件尾部换行。
+- `like-default` 自动选择同扩展名的默认 locale；JSON 不与 `.lang` 混用，避免跨格式丢失注释。
+- 新增 `template` ordering。模板路径优先取调用参数，其次取项目配置；模板语法与上游一致：空行输出分组空行，`#` 输出注释，普通行按 `!`、`?`、`+`、`*` 量词匹配 translation key，未匹配项按 ascending 追加。
+
+### 模块与配置
+
+- `translations.lua` 保持一个公开排序入口，内部按 JSON / `.lang` codec 分离解析和渲染，排序策略只消费统一 entry 模型。
+- `defaults.translations.template_path` 为项目模板入口；相对路径按当前工作目录解析。调用方可用 `options.template_path` 或 `options.template_content` 覆盖，便于测试与自动化。
+- 用户可见错误继续通过 `config.messages.translations` 与 notify helper 输出；不在解析器中内联通知。
+
+### 依赖与验证
+
+- DuckDuckGo 与 GitHub MCP 未找到面向 Neovim/Lua、维护中的 Minecraft `.lang` 排序或模板解析依赖。该语法是窄行格式，复用 Neovim 内置 buffer、filesystem 和 Lua pattern 能力，不增加运行时依赖。
+- 目标场景覆盖 `.lang` ascending/descending/like-default/template、注释与空行、量词、重复 key、未知行、缺失模板、JSON 回归和真实 buffer 写回。
+- 完成后通过已连接 Neovim MCP 运行目标场景、`test/test_refactor.lua`，并检查命令补全、最终 mode、Stylua 与 `git diff --check`。

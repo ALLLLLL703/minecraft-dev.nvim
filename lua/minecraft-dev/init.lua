@@ -34,7 +34,7 @@ function M.list_templates(options)
 	return require("minecraft-dev.custom").list(options)
 end
 
----@param options? { buffer?: integer, order?: string, default_path?: string }
+---@param options? { buffer?: integer, order?: string, default_path?: string, template_path?: string, template_content?: string }
 ---@return table
 function M.sort_translations(options)
 	return require("minecraft-dev.translations").sort_buffer(options)

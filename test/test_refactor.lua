@@ -3051,10 +3051,11 @@ end
 
 local function test_translation_json_sorting()
 	local translations = require("minecraft-dev.translations")
-	local normalized = config.normalize({ defaults = { translations = { order = "unknown", default_locale = "../en_us", indent = "\n" } } })
+	local normalized = config.normalize({ defaults = { translations = { order = "unknown", default_locale = "../en_us", indent = "\n", template_path = false } } })
 	assert_equal(normalized.defaults.translations.order, "ascending", "invalid default sort order should normalize")
 	assert_equal(normalized.defaults.translations.default_locale, "en_us", "empty default locale should normalize")
 	assert_equal(normalized.defaults.translations.indent, "  ", "multiline indentation should normalize")
+	assert_equal(normalized.defaults.translations.template_path, nil, "invalid template path should normalize")
 	assert_equal(
 		config.normalize({ defaults = { translations = false } }).defaults.translations,
 		config.default_config.defaults.translations,
@@ -3096,6 +3097,49 @@ local function test_translation_json_sorting()
 	assert_equal(select(2, translations.sort_content("{}", { order = "like-default" })).code, "missing_default", "like-default should require a default locale")
 end
 
+local function test_translation_lang_and_template_sorting()
+	local translations = require("minecraft-dev.translations")
+	local content = "# Zed\nitem.demo.z=Zed\n\n# Alpha\nitem.demo.a=Alpha\n"
+	assert_equal(
+		assert(translations.sort_content(content, { format = "lang", order = "ascending" })),
+		"# Alpha\nitem.demo.a=Alpha\n\n# Zed\nitem.demo.z=Zed\n",
+		"legacy lang sorting should move attached comments and preserve blank separators"
+	)
+	assert_equal(
+		assert(translations.sort_content(content, { format = "lang", order = "like-default", default_content = "item.demo.z=Z\nitem.demo.a=A\n" })),
+		content,
+		"legacy lang files should follow a legacy default locale"
+	)
+
+	local templated = assert(translations.sort_content(
+		"item.demo.z=Z\nblock.demo.a=A\nmisc.demo.x=X\nitem.demo.a=A\n",
+		{ format = "lang", order = "template", template_content = "block.!+.a\n\n# Items\nitem.*" }
+	))
+	assert_equal(
+		templated,
+		"block.demo.a=A\n\n# Items\nitem.demo.a=A\nitem.demo.z=Z\nmisc.demo.x=X\n",
+		"project template sorting should apply quantifiers, layout, and ascending fallback"
+	)
+	assert_equal(
+		assert(translations.sort_content('{"item.z":"Z","block.a":"A","item.a":"A"}', {
+			order = "template",
+			template_content = "block.*\n\nitem.*",
+		})),
+		'{\n  "block.a": "A",\n\n  "item.a": "A",\n  "item.z": "Z"\n}',
+		"JSON template sorting should preserve template group spacing"
+	)
+	assert_equal(
+		assert(translations.sort_content('{"z":"Z","a":"A"}', { order = "template", template_content = "" })),
+		'{\n  "a": "A",\n  "z": "Z"\n}',
+		"an empty project template should fall back to ascending without adding layout"
+	)
+
+	assert_equal(select(2, translations.sort_content("key=value\nkey=again", { format = "lang" })).code, "duplicate_key", "legacy duplicate keys should be rejected")
+	assert_equal(select(2, translations.sort_content(" =value", { format = "lang" })).code, "empty_key", "blank legacy keys should be rejected")
+	assert_equal(select(2, translations.sort_content("not-an-entry", { format = "lang" })).code, "invalid_lang", "unknown legacy syntax should fail safely")
+	assert_equal(select(2, translations.sort_content("key=value", { format = "lang", order = "template" })).code, "missing_template", "template ordering should require template content")
+end
+
 local function test_translation_buffer_and_command()
 	local minecraft_dev = require("minecraft-dev")
 	local translation_root = vim.fn.tempname()
@@ -3130,6 +3174,34 @@ local function test_translation_buffer_and_command()
 		"missing sibling default locale should return a structured error"
 	)
 
+	local lang_buffer = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_buf_set_name(lang_buffer, translation_directory .. "/fr_fr.lang")
+	vim.api.nvim_buf_set_lines(lang_buffer, 0, -1, false, { "item.demo.z=Z", "item.demo.a=A" })
+	vim.bo[lang_buffer].eol = true
+	vim.fn.writefile({ "item.demo.z=Z", "item.demo.a=A" }, translation_directory .. "/en_us.lang")
+	assert_equal(
+		minecraft_dev.sort_translations({ buffer = lang_buffer, order = "ascending" }).status,
+		"sorted",
+		"public API should sort legacy Minecraft translation buffers"
+	)
+	assert_equal(
+		vim.api.nvim_buf_get_lines(lang_buffer, 0, -1, false),
+		{ "item.demo.a=A", "item.demo.z=Z" },
+		"legacy buffer sorting should replace content without converting its format"
+	)
+	local template_path = translation_root .. "/minecraft_localization_template.lang"
+	vim.fn.writefile({ "item.demo.z", "item.demo.a" }, template_path)
+	assert_equal(
+		minecraft_dev.sort_translations({ buffer = lang_buffer, order = "template", template_path = template_path }).status,
+		"sorted",
+		"public API should load a project sorting template"
+	)
+	assert_equal(
+		vim.api.nvim_buf_get_lines(lang_buffer, 0, -1, false),
+		{ "item.demo.z=Z", "item.demo.a=A" },
+		"buffer template sorting should follow the configured project template"
+	)
+
 	local ordinary = vim.api.nvim_create_buf(true, false)
 	vim.api.nvim_buf_set_name(ordinary, vim.fn.tempname() .. "/settings.json")
 	vim.api.nvim_buf_set_lines(ordinary, 0, -1, false, { "{}" })
@@ -3145,6 +3217,7 @@ local function test_translation_buffer_and_command()
 		{ "descending" },
 		"translation command completion should expose supported ordering modes"
 	)
+	assert_equal(vim.fn.getcompletion("MinecraftDevSortTranslations t", "cmdline"), { "template" }, "command completion should expose template ordering")
 	local original_notify = vim.notify
 	local command_error
 	vim.notify = function(message, level)
@@ -3166,6 +3239,7 @@ local function test_translation_buffer_and_command()
 	)
 
 	vim.api.nvim_buf_delete(buffer, { force = true })
+	vim.api.nvim_buf_delete(lang_buffer, { force = true })
 	vim.api.nvim_buf_delete(ordinary, { force = true })
 	vim.fn.delete(translation_root, "rf")
 end
@@ -3226,6 +3300,7 @@ local function run()
 	test_paper_kotlin_templates()
 	test_paper_gradle_project_version()
 	test_translation_json_sorting()
+	test_translation_lang_and_template_sorting()
 	test_translation_buffer_and_command()
 	print("test_refactor.lua: ok")
 end

@@ -84,7 +84,7 @@ and use the command
 GmcPro
 GmcPro [bungeecord|fabric|paper|spigot|sponge|velocity|waterfall] [gradle|maven] minecraft_version [path]
 MinecraftDevNew
-MinecraftDevSortTranslations [ascending|descending|like-default]
+MinecraftDevSortTranslations [ascending|descending|like-default|template]
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -93,11 +93,13 @@ sets do not fit the positional command. Fabric's composite versions use dedicate
 other unsupported composite property types still use JSON input. Prompts and messages remain configurable through
 `setup()`. Cancelling a wizard selection aborts generation without creating a project.
 
-`:MinecraftDevSortTranslations` sorts the current modern Minecraft translation file under
-`assets/<namespace>/lang/<locale>.json`. The default `ascending` mode compares dotted key segments;
-`descending` reverses that order, and `like-default` follows the sibling `en_us.json` order before appending
-locale-only keys alphabetically. The command rejects ordinary JSON files and non-string translation values rather
-than rewriting them as if they were Minecraft language files.
+`:MinecraftDevSortTranslations` sorts modern JSON and legacy `.lang` Minecraft translation files under
+`assets/<namespace>/lang/`. The default `ascending` mode compares dotted key segments; `descending` reverses that
+order, and `like-default` follows the sibling `en_us` file with the same extension before appending locale-only keys
+alphabetically. `template` loads `defaults.translations.template_path` and supports MinecraftDev-compatible key
+patterns, comments, and empty-line groups. Lua callers may override it with `template_path` or `template_content`.
+Legacy sorting keeps attached comments, blank separators, values, and the final newline. Invalid or duplicate entries
+fail without rewriting the buffer.
 
 When generating a Fabric project, the plugin now asks for:
 
