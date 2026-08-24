@@ -11,6 +11,7 @@ function M.setup(opts)
 	require("minecraft-dev.translation_source").setup()
 	require("minecraft-dev.bukkit_metadata").setup()
 	require("minecraft-dev.forge_metadata").setup()
+	require("minecraft-dev.fabric_metadata").setup()
 end
 
 ---@param spec table
@@ -124,6 +125,36 @@ end
 ---@return table
 function M.goto_forge_logo(options)
 	return require("minecraft-dev.forge_metadata").goto_logo(options)
+end
+
+---@param options? { buffer?: integer, root?: string, language?: string, max_files?: integer }
+---@return table
+function M.diagnose_fabric_manifest(options)
+	return require("minecraft-dev.fabric_metadata").diagnose_buffer(options)
+end
+
+---@param options? { buffer?: integer, root?: string, prefix?: string, entrypoint_type?: string, max_files?: integer }
+---@return table
+function M.complete_fabric_entrypoints(options)
+	return require("minecraft-dev.fabric_metadata").complete_entrypoints(options)
+end
+
+---@param options? { buffer?: integer, prefix?: string, kind?: "mixin"|"accessWidener"|"icon" }
+---@return table
+function M.complete_fabric_resources(options)
+	return require("minecraft-dev.fabric_metadata").complete_resources(options)
+end
+
+---@param options? { buffer?: integer, root?: string, value?: string, open?: boolean, max_files?: integer }
+---@return table
+function M.goto_fabric_entrypoint(options)
+	return require("minecraft-dev.fabric_metadata").goto_entrypoint(options)
+end
+
+---@param options? { buffer?: integer, open?: boolean }
+---@return table
+function M.goto_fabric_resource(options)
+	return require("minecraft-dev.fabric_metadata").goto_resource(options)
 end
 
 function M.reload()

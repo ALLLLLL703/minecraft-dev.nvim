@@ -190,6 +190,7 @@ local function collect_declarations(node, buffer, file, package_name, imports, o
 			local nested = vim.list_extend(vim.deepcopy(enclosing), { name })
 			local class_name = table.concat(nested, "$")
 			local start_row, start_col, end_row, end_col = name_node:range()
+			local declaration_lnum, declaration_col, declaration_end_lnum, declaration_end_col = node:range()
 			local header = vim.treesitter.get_node_text(node, buffer):match("^[^{]*") or ""
 			table.insert(output, {
 				name = name,
@@ -201,6 +202,10 @@ local function collect_declarations(node, buffer, file, package_name, imports, o
 				col = start_col,
 				end_lnum = end_row,
 				end_col = end_col,
+				declaration_lnum = declaration_lnum,
+				declaration_col = declaration_col,
+				declaration_end_lnum = declaration_end_lnum,
+				declaration_end_col = declaration_end_col,
 				abstract = header:match("%f[%w]abstract%f[%W]") ~= nil or node:type() == "interface_declaration",
 				parents = declaration_parents(node, buffer, file.language, imports, package_name),
 				forge_mod_ids = forge_mod_ids(node, buffer),
@@ -328,6 +333,55 @@ function M.is_bukkit_plugin(indexed, entry)
 		by_fqn[candidate.fqn] = candidate
 	end
 	return bukkit_status(entry, by_fqn, {})
+end
+
+local function inheritance_status(entry, by_fqn, targets, visiting)
+	if visiting[entry.fqn] then
+		return nil
+	end
+	visiting[entry.fqn] = true
+	local unknown = false
+	for _, parent in ipairs(entry.parents) do
+		if targets[parent] then
+			visiting[entry.fqn] = nil
+			return true
+		end
+		local local_parent = by_fqn[parent]
+		if local_parent then
+			local status = inheritance_status(local_parent, by_fqn, targets, visiting)
+			if status == true then
+				visiting[entry.fqn] = nil
+				return true
+			end
+			if status == nil then
+				unknown = true
+			end
+		elseif not parent:match("^java%.") and not parent:match("^kotlin%.") then
+			unknown = true
+		end
+	end
+	visiting[entry.fqn] = nil
+	return unknown and nil or false
+end
+
+---@param indexed table
+---@param entry table
+---@param target string|string[]
+---@return boolean?
+function M.inherits(indexed, entry, target)
+	local targets = {}
+	if type(target) == "string" then
+		targets[target] = true
+	else
+		for _, value in ipairs(target) do
+			targets[value] = true
+		end
+	end
+	local by_fqn = {}
+	for _, candidate in ipairs(indexed.entries) do
+		by_fqn[candidate.fqn] = candidate
+	end
+	return inheritance_status(entry, by_fqn, targets, {})
 end
 
 return M

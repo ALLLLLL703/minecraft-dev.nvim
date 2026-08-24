@@ -432,3 +432,22 @@ require("minecraft-dev").generate({
 
 - 独立 `minecraft-dev.metadata.forge` namespace 与 `MinecraftDevForgeMetadata` augroup，仅处理 `mods.toml` / `neoforge.mods.toml`，重复 setup 不累积 autocmd。
 - 场景覆盖 Forge/NeoForge、有效/错误字段、placeholder、union version range、依赖跳转、logo 跳转、补全、malformed TOML 与 parser 缺失。
+
+## 当前实现切片：P3.4 Fabric mod JSON metadata
+
+### 上游与规范证据
+
+- GitHub MCP 对齐上游 `FabricReferenceContributor`、`EntryPointReference` 与 `FabricEntrypointsInspection`：entrypoint class/member、mixin config、access widener、icon、license、类型、构造器和 member 约束均纳入等价面。
+- Context7 的 Fabric 官方文档固定 `schemaVersion` / `id` / `version` 必填规则、schemaVersion 首字段、environment、entrypoints、mixins、dependency 与 class tweaker 结构。
+
+### 解析、诊断与引用
+
+- `json_tree.parse_buffer()` 基于 Neovim Tree-sitter 保留 object/array/scalar、重复 key 与零基位置；只在完整 JSON 上构建模型，不用 `vim.json.decode` 丢失重复 key。
+- Fabric diagnostics 覆盖必填字段、mod id、schema、environment、dependency value、simple/object entrypoint、initializer inheritance、member visibility/parameter/static/type、empty constructor 与有界扫描 warning。
+- mixin config、accessWidener、icon 从 `fabric.mod.json` 所在 resource root 解析；license 导航解析项目根 `LICENSE` / `LICENSE.txt`，SPDX 值本身不因缺少文件而报错。
+- entrypoint 与 resource 均提供结构化跳转；entrypoint completion 按 initializer 类型过滤 Java/Kotlin class，resource completion 按 mixin/access widener/icon 类型过滤。
+
+### 生命周期与验证
+
+- 独立 `minecraft-dev.metadata.fabric` namespace 与 `MinecraftDevFabricMetadata` augroup，仅处理 `fabric.mod.json`，不覆盖已有 `completefunc`，重复 setup 不累积 autocmd。
+- 场景覆盖 Java/Kotlin、object adapter、class/member syntax、错误类型/构造器、resource/license 跳转、补全、malformed JSON、parser 缺失与 setup 幂等。

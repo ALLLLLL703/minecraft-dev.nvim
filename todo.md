@@ -85,7 +85,7 @@
 
 - [x] `plugin.yml` / `paper-plugin.yml` 结构、类引用和依赖诊断
 - [ ] `mods.toml` / `neoforge.mods.toml` 结构、版本范围和 mod id 诊断
-- [ ] `fabric.mod.json` entrypoint、mixin config、资源路径和依赖诊断
+- [x] `fabric.mod.json` entrypoint、mixin config、资源路径和依赖诊断
 - [ ] Mixin JSON config package、class、required fields 和 compatibilityLevel 诊断
 - [ ] 为确定字段提供补全、hover 或跳转入口
 - [ ] 每种文件均添加 fixture、错误路径和 Neovim MCP 场景
@@ -118,6 +118,18 @@
 - [x] 提供 mod id 与 logoFile 的结构化跳转及上下文补全
 - [x] 接入公开 API、配置消息、buffer diagnostics 生命周期和 README
 - [x] 覆盖 Forge、NeoForge、placeholder、资源路径、parser 错误和 setup 幂等
+- [x] 通过 LSP MCP、Neovim MCP 与静态检查
+
+### P3.4：Fabric mod JSON metadata（已完成）
+
+- [x] 通过 GitHub MCP 固定上游 entrypoint、resource、license reference 与 inspection 语义
+- [x] 通过 Context7 固定 Fabric 官方必填字段、类型、environment 与 resource 字段语义
+- [x] 建立保留 object/array/value 位置和重复 key 的通用 JSON Tree-sitter 文档模型
+- [x] 诊断必填字段、mod id、schemaVersion、字段类型、environment 和 dependency 值
+- [x] 解析 entrypoint class/member，校验 initializer 类型、可见性、参数和构造器
+- [x] 解析 mixin config、accessWidener、icon 与 LICENSE 资源引用
+- [x] 提供 entrypoint/resource 跳转、补全、公开 API、命令、README 和使用文档
+- [x] 覆盖 Java/Kotlin、object entrypoint、member syntax、资源错误、parser 错误和 setup 幂等
 - [x] 通过 LSP MCP、Neovim MCP 与静态检查
 
 ## 阶段 4：NBT 与资源编辑
@@ -161,3 +173,4 @@
 - P3.1 Bukkit/Paper main：Java/Kotlin、本地继承链、抽象/错误/未知类型、未保存 buffer、扫描截断、quoted YAML、completion、goto、parser 缺失和 augroup 幂等通过 Neovim MCP；`jvm_index.lua`、`bukkit_metadata.lua`、配置和公开入口的 LSP MCP diagnostics 为零。
 - P3.2 Bukkit/Paper manifest：通用 YAML Tree-sitter model、重复 key、字段类型、legacy dependency、自依赖、Paper bootstrap/server load/boolean 与 malformed YAML 场景通过 Neovim MCP；三个生产 Lua 模块的 LSP MCP diagnostics 为零，Stylua 与目标 diff 检查通过。
 - P3.3 Forge/NeoForge TOML：Tree-sitter document model、schema/type/mod id/version range/enum/dependency owner diagnostics、Java/Kotlin `@Mod` 常量索引、manifest/source/logo 跳转、字段文档补全、placeholder 与 parser failure 场景通过 Neovim MCP；目标生产 Lua 的 LSP MCP diagnostics、Stylua 与 diff 检查通过。
+- P3.4 Fabric mod JSON：Tree-sitter document model、required/schema/id/environment/dependency diagnostics、Java/Kotlin class/member entrypoint 规则、mixin/accessWidener/icon/license 引用、跳转与类型过滤补全场景通过 Neovim MCP；目标生产 Lua 的 LSP MCP diagnostics、Stylua 与 diff 检查通过。

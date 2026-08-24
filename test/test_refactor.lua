@@ -3784,6 +3784,142 @@ function _G.MinecraftDevTestForgeManifestMetadata()
 	vim.fn.delete(root, "rf")
 end
 
+function _G.MinecraftDevTestFabricManifestMetadata()
+	local minecraft_dev = require("minecraft-dev")
+	local root = vim.fn.tempname()
+	local resources = root .. "/src/main/resources"
+	local java = root .. "/src/main/java/test"
+	vim.fn.mkdir(root .. "/.git", "p")
+	vim.fn.mkdir(resources, "p")
+	vim.fn.mkdir(java, "p")
+	vim.fn.writefile({
+		"package test;",
+		"import net.fabricmc.api.ModInitializer;",
+		"public final class Good implements ModInitializer {",
+		"  public void handle() {}",
+		"  private void hidden() {}",
+		"  public void withArg(String value) {}",
+		"}",
+	}, java .. "/Good.java")
+	vim.fn.writefile({
+		"package test;",
+		"import net.fabricmc.api.ClientModInitializer;",
+		"public final class Client implements ClientModInitializer {}",
+	}, java .. "/Client.java")
+	vim.fn.writefile({ "package test;", "public final class Bad {}" }, java .. "/Bad.java")
+	vim.fn.writefile({
+		"package test;",
+		"public final class Container {",
+		"  public static Good initializer = new Good();",
+		"  public static Bad wrong = new Bad();",
+		"  public Good instance = new Good();",
+		"}",
+	}, java .. "/Container.java")
+	vim.fn.writefile({
+		"package test;",
+		"public final class BadCtor {",
+		"  public BadCtor(String value) {}",
+		"  public void handle() {}",
+		"}",
+	}, java .. "/BadCtor.java")
+	vim.fn.writefile({
+		"package test",
+		"import net.fabricmc.api.ModInitializer",
+		"class KGood : ModInitializer",
+	}, java .. "/KGood.kt")
+	vim.fn.writefile({ "{}" }, resources .. "/demo.mixins.json")
+	vim.fn.writefile({ "accessWidener v2 named" }, resources .. "/demo.accesswidener")
+	vim.fn.writefile({ "png" }, resources .. "/icon.png")
+	vim.fn.writefile({ "MIT License" }, root .. "/LICENSE")
+	local path = resources .. "/fabric.mod.json"
+	vim.fn.writefile({
+		"{",
+		'  "schemaVersion": 1,',
+		'  "id": "demo-mod",',
+		'  "version": "1.0.0",',
+		'  "environment": "*",',
+		'  "license": "MIT",',
+		'  "entrypoints": {',
+		'    "main": ["test.Good", "test.Good::handle", "test.Container::initializer", {"value": "test.KGood", "adapter": "kotlin"}],',
+		'    "client": ["test.Client"]',
+		"  },",
+		'  "mixins": ["demo.mixins.json"],',
+		'  "accessWidener": "demo.accesswidener",',
+		'  "icon": "icon.png",',
+		'  "depends": {"fabricloader": ">=0.16", "minecraft": ["1.21", "1.21.1"]}',
+		"}",
+	}, path)
+	local buffer = vim.fn.bufadd(path)
+	vim.fn.bufload(buffer)
+	vim.bo[buffer].filetype = "json"
+	local valid = minecraft_dev.diagnose_fabric_manifest({ buffer = buffer })
+	assert_equal(valid.status, "diagnosed", "fabric.mod.json should be parsed")
+	assert_equal(#valid.diagnostics, 0, "valid Fabric metadata should pass")
+	assert_equal(#valid.entrypoints, 5, "simple, method, field, and object entrypoints should be indexed")
+	assert_equal(minecraft_dev.goto_fabric_entrypoint({ buffer = buffer, value = "test.KGood", open = false }).status, "found", "Kotlin Fabric entrypoint should resolve")
+	local completed = minecraft_dev.complete_fabric_entrypoints({ buffer = buffer, entrypoint_type = "main", prefix = "test." })
+	local completion_words = {}
+	for _, item in ipairs(completed.items) do completion_words[item.word] = true end
+	assert_truthy(completion_words["test.Good"] and completion_words["test.KGood"], "main entrypoint completion should include Java and Kotlin initializers")
+	assert_truthy(not completion_words["test.Client"], "main entrypoint completion should filter wrong initializer types")
+	local resource_completion = minecraft_dev.complete_fabric_resources({ buffer = buffer, kind = "mixin", prefix = "demo" })
+	assert_equal(resource_completion.items[1].word, "demo.mixins.json", "Fabric resource completion should filter by reference kind")
+	vim.api.nvim_set_current_buf(buffer)
+	vim.api.nvim_win_set_cursor(0, { 13, 12 })
+	assert_equal(minecraft_dev.goto_fabric_resource({ buffer = buffer, open = false }).status, "found", "Fabric icon should resolve from resources")
+	vim.api.nvim_win_set_cursor(0, { 6, 15 })
+	local license_jump = minecraft_dev.goto_fabric_resource({ buffer = buffer, open = false })
+	assert_equal(license_jump.status, "found", "Fabric license should resolve to the project LICENSE file")
+
+	vim.api.nvim_buf_set_lines(buffer, 0, -1, false, {
+		"{",
+		'  "id": "Bad Id",',
+		'  "schemaVersion": 2,',
+		'  "id": "duplicate",',
+		'  "version": 1,',
+		'  "environment": "both",',
+		'  "entrypoints": {"main": ["test.Bad", "test.Missing", "test.Good::hidden", "test.Good::withArg", "test.Good::missing", "test.BadCtor::handle", "test.Container::wrong", "test.Container::instance"]},',
+		'  "mixins": [{"environment": "sideways"}, "missing.json"],',
+		'  "accessWidener": "missing.txt",',
+		'  "depends": {"minecraft": 1}',
+		"}",
+	})
+	local invalid = minecraft_dev.diagnose_fabric_manifest({ buffer = buffer })
+	local codes = {}
+	for _, item in ipairs(invalid.diagnostics) do codes[item.code] = item end
+	for _, code in ipairs({
+		"fabric_field_duplicate",
+		"fabric_field_type_invalid",
+		"fabric_schema_first",
+		"fabric_schema_invalid",
+		"fabric_mod_id_invalid",
+		"fabric_environment_invalid",
+		"fabric_dependency_invalid",
+		"fabric_entrypoint_wrong_type",
+		"fabric_entrypoint_unresolved",
+		"fabric_entrypoint_member_private",
+		"fabric_entrypoint_method_parameters",
+		"fabric_entrypoint_member_unresolved",
+		"fabric_entrypoint_constructor_invalid",
+		"fabric_entrypoint_field_static",
+		"fabric_resource_type_invalid",
+		"fabric_resource_name_invalid",
+		"fabric_resource_unresolved",
+	}) do
+		assert_truthy(codes[code] ~= nil, "invalid Fabric metadata should diagnose " .. code)
+	end
+
+	vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "{" })
+	assert_equal(minecraft_dev.diagnose_fabric_manifest({ buffer = buffer }).error.code, "invalid_json", "malformed Fabric JSON should fail structurally")
+	assert_equal(require("minecraft-dev.fabric_metadata").inspect({ buffer = buffer, language = "missing_json_parser" }).error.code, "parser_unavailable", "missing JSON parser should be isolated")
+	minecraft_dev.setup()
+	local first_count = #vim.api.nvim_get_autocmds({ group = "MinecraftDevFabricMetadata" })
+	minecraft_dev.setup()
+	assert_equal(#vim.api.nvim_get_autocmds({ group = "MinecraftDevFabricMetadata" }), first_count, "Fabric metadata setup should be idempotent")
+	vim.api.nvim_buf_delete(buffer, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -3850,6 +3986,8 @@ local function run()
 	_G.MinecraftDevTestBukkitManifestStructureAndDependencies = nil
 	_G.MinecraftDevTestForgeManifestMetadata()
 	_G.MinecraftDevTestForgeManifestMetadata = nil
+	_G.MinecraftDevTestFabricManifestMetadata()
+	_G.MinecraftDevTestFabricManifestMetadata = nil
 	print("test_refactor.lua: ok")
 end
 

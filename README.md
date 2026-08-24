@@ -104,6 +104,8 @@ MinecraftDevFindTranslationUsages [key]
 MinecraftDevGotoBukkitMain [fully.qualified.Class]
 MinecraftDevGotoForgeMod [mod_id]
 MinecraftDevGotoForgeLogo
+MinecraftDevGotoFabricEntrypoint [class_or_member]
+MinecraftDevGotoFabricResource
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -165,6 +167,13 @@ schema keys, known values, dependency owners, and constant `@Mod` IDs; completio
 value to the matching source class, while
 `:MinecraftDevGotoForgeLogo` opens the resource under the manifest's resource root. Lua callers can use
 `diagnose_forge_manifest()`, `complete_forge_manifest()`, `goto_forge_mod()`, and `goto_forge_logo()`.
+
+`fabric.mod.json` diagnostics validate required metadata, mod IDs, schema ordering/version, environment and dependency
+values, Java/Kotlin entrypoint classes and `Class::member` rules, plus mixin config, access widener, icon, and project
+license references. Entrypoint checks cover initializer inheritance, public/no-argument methods, static fields, and empty
+constructors where required. `:MinecraftDevGotoFabricEntrypoint` and `:MinecraftDevGotoFabricResource` provide source
+and resource navigation; Lua callers can use `diagnose_fabric_manifest()`, `complete_fabric_entrypoints()`,
+`complete_fabric_resources()`, `goto_fabric_entrypoint()`, and `goto_fabric_resource()`.
 
 When generating a Fabric project, the plugin now asks for:
 

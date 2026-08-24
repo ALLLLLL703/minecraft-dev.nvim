@@ -12,6 +12,8 @@ function M.setup()
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoBukkitMain")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoForgeMod")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoForgeLogo")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoFabricEntrypoint")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoFabricResource")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
@@ -83,6 +85,20 @@ function M.setup()
 		local result = require("minecraft-dev").goto_forge_logo()
 		if result.status == "failed" then
 			local err = result.error or { code = "toml_logo_unresolved" }
+			notify.notify(vim.log.levels.ERROR, { "metadata", err.code }, tostring(err.detail or ""))
+		end
+	end, {})
+	vim.api.nvim_create_user_command("MinecraftDevGotoFabricEntrypoint", function(opts)
+		local result = require("minecraft-dev").goto_fabric_entrypoint({ value = opts.args ~= "" and opts.args or nil })
+		if result.status == "failed" then
+			local err = result.error or { code = "fabric_entrypoint_unresolved" }
+			notify.notify(vim.log.levels.ERROR, { "metadata", err.code }, tostring(err.detail or ""))
+		end
+	end, { nargs = "?" })
+	vim.api.nvim_create_user_command("MinecraftDevGotoFabricResource", function()
+		local result = require("minecraft-dev").goto_fabric_resource()
+		if result.status == "failed" then
+			local err = result.error or { code = "fabric_resource_unresolved" }
 			notify.notify(vim.log.levels.ERROR, { "metadata", err.code }, tostring(err.detail or ""))
 		end
 	end, {})
