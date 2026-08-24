@@ -14,6 +14,7 @@ function M.setup()
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoForgeLogo")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoFabricEntrypoint")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoFabricResource")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoMixinReference")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
@@ -102,6 +103,13 @@ function M.setup()
 			notify.notify(vim.log.levels.ERROR, { "metadata", err.code }, tostring(err.detail or ""))
 		end
 	end, {})
+	vim.api.nvim_create_user_command("MinecraftDevGotoMixinReference", function(opts)
+		local result = require("minecraft-dev").goto_mixin_reference({ value = opts.args ~= "" and opts.args or nil })
+		if result.status == "failed" then
+			local err = result.error or { code = "mixin_reference_unresolved" }
+			notify.notify(vim.log.levels.ERROR, { "metadata", err.code }, tostring(err.detail or ""))
+		end
+	end, { nargs = "?" })
 end
 
 function M.dispatch(args)

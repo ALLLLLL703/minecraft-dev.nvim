@@ -12,6 +12,7 @@ function M.setup(opts)
 	require("minecraft-dev.bukkit_metadata").setup()
 	require("minecraft-dev.forge_metadata").setup()
 	require("minecraft-dev.fabric_metadata").setup()
+	require("minecraft-dev.mixin_metadata").setup()
 end
 
 ---@param spec table
@@ -155,6 +156,24 @@ end
 ---@return table
 function M.goto_fabric_resource(options)
 	return require("minecraft-dev.fabric_metadata").goto_resource(options)
+end
+
+---@param options? { buffer?: integer, root?: string, language?: string, max_files?: integer }
+---@return table
+function M.diagnose_mixin_config(options)
+	return require("minecraft-dev.mixin_metadata").diagnose_buffer(options)
+end
+
+---@param options? { buffer?: integer, root?: string, prefix?: string, kind?: "mixin"|"plugin"|"package"|"compatibilityLevel", max_files?: integer }
+---@return table
+function M.complete_mixin_config(options)
+	return require("minecraft-dev.mixin_metadata").complete(options)
+end
+
+---@param options? { buffer?: integer, root?: string, value?: string, kind?: "mixin"|"plugin", open?: boolean, max_files?: integer }
+---@return table
+function M.goto_mixin_reference(options)
+	return require("minecraft-dev.mixin_metadata").goto_reference(options)
 end
 
 function M.reload()

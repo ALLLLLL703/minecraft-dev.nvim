@@ -451,3 +451,22 @@ require("minecraft-dev").generate({
 
 - 独立 `minecraft-dev.metadata.fabric` namespace 与 `MinecraftDevFabricMetadata` augroup，仅处理 `fabric.mod.json`，不覆盖已有 `completefunc`，重复 setup 不累积 autocmd。
 - 场景覆盖 Java/Kotlin、object adapter、class/member syntax、错误类型/构造器、resource/license 跳转、补全、malformed JSON、parser 缺失与 setup 幂等。
+
+## 当前实现切片：P3.5 Mixin config JSON metadata
+
+### 上游证据与作用域
+
+- GitHub MCP 对齐上游 `MixinConfig`、`MixinConfigReferenceContributor`、`MixinClass`、`MixinPackage`、`MixinPlugin`、`CompatibilityLevel` 与 value inspection。
+- 文件识别覆盖 `mixin` / `mixins` 命名段及其 dotted variant 的 JSON/JSON5；JSON5 parser 缺失时返回 `parser_unavailable`，不把 JSON5 当 JSON 猜测。
+
+### 诊断、索引与导航
+
+- 复用 `json_tree` 保留字段类型、重复 key 与位置，检查 package、required、minVersion、plugin、compatibilityLevel、mixins/client/server 和常用 boolean/object 字段。
+- `jvm_index` 记录声明 header 的 annotation simple/FQN 名称；Mixin list 只接受 package 下带 `@Mixin` 的 Java/Kotlin class，plugin 必须 concrete 且实现 `IMixinConfigPlugin`。
+- common/client/server 重复 class、错误 item、无法解析/歧义 class、错误 plugin 与不完整 source scan 分别产生确定 diagnostic 或 warning。
+- `goto_mixin_reference()` 与 completion 使用 package-relative class 名；completion 还提供 plugin、package 和宽松前向兼容的 `JAVA_n` compatibilityLevel 候选。
+
+### 生命周期与验证
+
+- 独立 `minecraft-dev.metadata.mixin` namespace 与 `MinecraftDevMixinMetadata` augroup；只对已识别文件接管空的 `completefunc`，重复 setup 不累积 autocmd。
+- 场景覆盖 Java/Kotlin `@Mixin`、plugin interface、relative navigation、四类 completion、错误类型/package/class/plugin、malformed JSON、JSON5 parser 缺失和 setup 幂等。

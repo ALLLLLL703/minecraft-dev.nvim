@@ -3920,6 +3920,91 @@ function _G.MinecraftDevTestFabricManifestMetadata()
 	vim.fn.delete(root, "rf")
 end
 
+function _G.MinecraftDevTestMixinConfigMetadata()
+	local minecraft_dev = require("minecraft-dev")
+	local root = vim.fn.tempname()
+	local java = root .. "/src/main/java/test/mixin"
+	local resources = root .. "/src/main/resources"
+	vim.fn.mkdir(root .. "/.git", "p")
+	vim.fn.mkdir(java, "p")
+	vim.fn.mkdir(resources, "p")
+	vim.fn.writefile({
+		"package test.mixin;",
+		"import org.spongepowered.asm.mixin.Mixin;",
+		"@Mixin(Object.class)",
+		"public final class DemoMixin {}",
+	}, java .. "/DemoMixin.java")
+	vim.fn.writefile({
+		"package test.mixin",
+		"import org.spongepowered.asm.mixin.Mixin",
+		"@Mixin(Any::class)",
+		"class ClientMixin",
+	}, java .. "/ClientMixin.kt")
+	vim.fn.writefile({ "package test.mixin;", "public final class NotMixin {}" }, java .. "/NotMixin.java")
+	vim.fn.writefile({
+		"package test.mixin;",
+		"import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;",
+		"public final class Plugin implements IMixinConfigPlugin {}",
+	}, java .. "/Plugin.java")
+	local path = resources .. "/demo.mixins.json"
+	vim.fn.writefile({
+		"{",
+		'  "required": true,',
+		'  "minVersion": "0.8",',
+		'  "package": "test.mixin",',
+		'  "plugin": "test.mixin.Plugin",',
+		'  "compatibilityLevel": "JAVA_21",',
+		'  "mixins": ["DemoMixin"],',
+		'  "client": ["ClientMixin"]',
+		"}",
+	}, path)
+	local buffer = vim.fn.bufadd(path)
+	vim.fn.bufload(buffer)
+	vim.bo[buffer].filetype = "json"
+	local valid = minecraft_dev.diagnose_mixin_config({ buffer = buffer })
+	assert_equal(valid.status, "diagnosed", "Mixin config should be parsed")
+	assert_equal(#valid.diagnostics, 0, "valid Java/Kotlin Mixin config should pass")
+	assert_equal(#valid.mixins, 2, "common and client Mixin lists should be indexed")
+	assert_equal(minecraft_dev.goto_mixin_reference({ buffer = buffer, value = "DemoMixin", open = false }).status, "found", "package-relative Mixin class should resolve")
+	assert_equal(minecraft_dev.goto_mixin_reference({ buffer = buffer, value = "test.mixin.Plugin", kind = "plugin", open = false }).status, "found", "Mixin plugin should resolve")
+	assert_equal(minecraft_dev.complete_mixin_config({ buffer = buffer, kind = "mixin", prefix = "Demo" }).items[1].word, "DemoMixin", "Mixin completion should use package-relative names")
+	assert_equal(minecraft_dev.complete_mixin_config({ buffer = buffer, kind = "plugin", prefix = "test" }).items[1].word, "test.mixin.Plugin", "Mixin plugin completion should require the plugin interface")
+	assert_equal(minecraft_dev.complete_mixin_config({ kind = "compatibilityLevel", prefix = "JAVA_21" }).items[1].word, "JAVA_21", "Mixin compatibility levels should complete")
+
+	vim.api.nvim_buf_set_lines(buffer, 0, -1, false, {
+		"{",
+		'  "required": "true",',
+		'  "package": "bad package",',
+		'  "compatibilityLevel": "21",',
+		'  "mixins": ["NotMixin", "Missing", "NotMixin"],',
+		'  "plugin": "test.mixin.NotMixin"',
+		"}",
+	})
+	local invalid = minecraft_dev.diagnose_mixin_config({ buffer = buffer })
+	local codes = {}
+	for _, item in ipairs(invalid.diagnostics) do codes[item.code] = item end
+	for _, code in ipairs({
+		"mixin_field_type_invalid",
+		"mixin_package_invalid",
+		"mixin_package_unresolved",
+		"mixin_compatibility_invalid",
+		"mixin_class_duplicate",
+		"mixin_class_unresolved",
+		"mixin_plugin_wrong_type",
+	}) do
+		assert_truthy(codes[code] ~= nil, "invalid Mixin config should diagnose " .. code)
+	end
+	vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "{" })
+	assert_equal(minecraft_dev.diagnose_mixin_config({ buffer = buffer }).error.code, "invalid_json", "malformed Mixin JSON should fail structurally")
+	assert_equal(require("minecraft-dev.mixin_metadata").inspect({ buffer = buffer, language = "json5" }).error.code, "parser_unavailable", "missing JSON5 parser should be isolated")
+	minecraft_dev.setup()
+	local first_count = #vim.api.nvim_get_autocmds({ group = "MinecraftDevMixinMetadata" })
+	minecraft_dev.setup()
+	assert_equal(#vim.api.nvim_get_autocmds({ group = "MinecraftDevMixinMetadata" }), first_count, "Mixin metadata setup should be idempotent")
+	vim.api.nvim_buf_delete(buffer, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -3988,6 +4073,8 @@ local function run()
 	_G.MinecraftDevTestForgeManifestMetadata = nil
 	_G.MinecraftDevTestFabricManifestMetadata()
 	_G.MinecraftDevTestFabricManifestMetadata = nil
+	_G.MinecraftDevTestMixinConfigMetadata()
+	_G.MinecraftDevTestMixinConfigMetadata = nil
 	print("test_refactor.lua: ok")
 end
 

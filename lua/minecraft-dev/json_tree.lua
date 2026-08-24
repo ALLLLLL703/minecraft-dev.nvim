@@ -8,7 +8,16 @@ end
 local function decode_string(node, buffer)
 	local text = vim.treesitter.get_node_text(node, buffer)
 	local ok, value = pcall(vim.json.decode, text)
-	return ok and value or nil
+	if ok then
+		return value
+	end
+	if text:sub(1, 1) == "'" and text:sub(-1) == "'" then
+		return text:sub(2, -2):gsub("\\'", "'")
+	end
+	if text:match("^[%a_$][%w_$-]*$") then
+		return text
+	end
+	return nil
 end
 
 local parse_value

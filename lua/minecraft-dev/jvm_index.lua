@@ -182,6 +182,17 @@ local function forge_mod_ids(node, buffer)
 	return ids
 end
 
+local function annotation_names(node, buffer)
+	local text = vim.treesitter.get_node_text(node, buffer)
+	local header = text:match("^[^{]*") or text
+	local names = {}
+	for name in header:gmatch("@([%w_.$]+)") do
+		names[name] = true
+		names[name:match("([%w_$]+)$") or name] = true
+	end
+	return names
+end
+
 local function collect_declarations(node, buffer, file, package_name, imports, output, enclosing)
 	local next_enclosing = enclosing
 	if DECLARATIONS[node:type()] then
@@ -209,6 +220,7 @@ local function collect_declarations(node, buffer, file, package_name, imports, o
 				abstract = header:match("%f[%w]abstract%f[%W]") ~= nil or node:type() == "interface_declaration",
 				parents = declaration_parents(node, buffer, file.language, imports, package_name),
 				forge_mod_ids = forge_mod_ids(node, buffer),
+				annotations = annotation_names(node, buffer),
 			})
 			next_enclosing = nested
 		end

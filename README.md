@@ -106,6 +106,7 @@ MinecraftDevGotoForgeMod [mod_id]
 MinecraftDevGotoForgeLogo
 MinecraftDevGotoFabricEntrypoint [class_or_member]
 MinecraftDevGotoFabricResource
+MinecraftDevGotoMixinReference [class]
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -174,6 +175,13 @@ license references. Entrypoint checks cover initializer inheritance, public/no-a
 constructors where required. `:MinecraftDevGotoFabricEntrypoint` and `:MinecraftDevGotoFabricResource` provide source
 and resource navigation; Lua callers can use `diagnose_fabric_manifest()`, `complete_fabric_entrypoints()`,
 `complete_fabric_resources()`, `goto_fabric_entrypoint()`, and `goto_fabric_resource()`.
+
+Mixin config files matching `mixin*.json`, `mixins*.json`, or dotted variants validate package/type structure,
+compatibility levels, duplicate class entries, local Java/Kotlin `@Mixin` classes, and concrete
+`IMixinConfigPlugin` implementations. `:MinecraftDevGotoMixinReference` navigates package-relative Mixin classes or
+plugin classes. Lua callers can use `diagnose_mixin_config()`, `complete_mixin_config()`, and
+`goto_mixin_reference()`. JSON5 is supported when a `json5` Tree-sitter parser is installed; a missing parser is
+reported structurally without falling back to lossy text matching.
 
 When generating a Fabric project, the plugin now asks for:
 
