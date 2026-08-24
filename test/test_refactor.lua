@@ -3244,6 +3244,76 @@ local function test_translation_buffer_and_command()
 	vim.fn.delete(translation_root, "rf")
 end
 
+local function test_translation_file_diagnostics()
+	local minecraft_dev = require("minecraft-dev")
+	local normalized = config.normalize({ defaults = { translations = { diagnostics = "yes" } } })
+	assert_equal(normalized.defaults.translations.diagnostics, true, "invalid translation diagnostic config should normalize")
+
+	local translation_root = vim.fn.tempname()
+	local translation_directory = translation_root .. "/src/main/resources/assets/demo/lang"
+	vim.fn.mkdir(translation_directory, "p")
+	vim.fn.writefile({ "dup=Default", " bad=Bad %s", "missing=Missing %s" }, translation_directory .. "/en_us.lang")
+	local buffer = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_buf_set_name(buffer, translation_directory .. "/fr_fr.lang")
+	vim.api.nvim_buf_set_lines(buffer, 0, -1, false, {
+		"dup=First",
+		"dup=Second",
+		" bad=Bad %d",
+		"extra=Extra",
+		"broken",
+	})
+	local result = minecraft_dev.diagnose_translations({ buffer = buffer })
+	assert_equal(result.status, "diagnosed", "public API should diagnose a legacy translation buffer")
+	local by_code = {}
+	for _, diagnostic in ipairs(result.diagnostics) do by_code[diagnostic.code] = diagnostic end
+	assert_equal(by_code.duplicate_key.lnum, 1, "duplicate diagnostics should point at the later entry")
+	assert_equal(by_code.whitespace_key.lnum, 2, "whitespace diagnostics should point at the key")
+	assert_equal(by_code.invalid_lang.lnum, 4, "incomplete legacy entries should be errors at their line")
+	assert_equal(by_code.missing_default_key.lnum, 3, "locale-only keys should be compared with the sibling default locale")
+	assert_equal(by_code.format_mismatch.lnum, 2, "format signatures should match the default locale")
+
+	local namespace = require("minecraft-dev.translation_diagnostics").namespace()
+	assert_equal(#vim.diagnostic.get(buffer, { namespace = namespace }), #result.diagnostics, "diagnostics should be published in an isolated namespace")
+
+	vim.fn.writefile({ "{", '  "same": "Value %s"', "}" }, translation_directory .. "/en_us.json")
+	local json_buffer = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_buf_set_name(json_buffer, translation_directory .. "/de_de.json")
+	vim.api.nvim_buf_set_lines(json_buffer, 0, -1, false, {
+		"{",
+		'  "same" : "Value %d",',
+		'  "extra": "Extra",',
+		'  "same": "Again %s"',
+		"}",
+	})
+	local json_result = minecraft_dev.diagnose_translations({ buffer = json_buffer })
+	local json_by_code = {}
+	for _, diagnostic in ipairs(json_result.diagnostics) do json_by_code[diagnostic.code] = diagnostic end
+	assert_equal(json_by_code.duplicate_key.lnum, 3, "JSON duplicate diagnostics should use the second property position")
+	assert_equal(json_by_code.missing_default_key.lnum, 2, "JSON locale-only keys should point at their property")
+	assert_equal(json_by_code.format_mismatch.lnum, 1, "JSON format mismatches should use the property position")
+	assert_equal(
+		require("minecraft-dev.translations").inspect_content('{"key": 2}', "json").issues[1].code,
+		"invalid_value",
+		"JSON inspection should reject non-string translation values"
+	)
+
+	minecraft_dev.setup()
+	local first_autocmd_count = #vim.api.nvim_get_autocmds({ group = "MinecraftDevTranslations" })
+	minecraft_dev.setup()
+	assert_equal(#vim.api.nvim_get_autocmds({ group = "MinecraftDevTranslations" }), first_autocmd_count, "repeated setup should not duplicate translation autocmds")
+
+	local ordinary = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_buf_set_name(ordinary, translation_root .. "/notes.txt")
+	vim.diagnostic.set(namespace, ordinary, { { lnum = 0, col = 0, message = "stale" } })
+	assert_equal(minecraft_dev.diagnose_translations({ buffer = ordinary }).status, "skipped", "ordinary buffers should be skipped")
+	assert_equal(#vim.diagnostic.get(ordinary, { namespace = namespace }), 0, "skipped buffers should clear only plugin diagnostics")
+
+	vim.api.nvim_buf_delete(buffer, { force = true })
+	vim.api.nvim_buf_delete(json_buffer, { force = true })
+	vim.api.nvim_buf_delete(ordinary, { force = true })
+	vim.fn.delete(translation_root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -3302,6 +3372,7 @@ local function run()
 	test_translation_json_sorting()
 	test_translation_lang_and_template_sorting()
 	test_translation_buffer_and_command()
+	test_translation_file_diagnostics()
 	print("test_refactor.lua: ok")
 end
 

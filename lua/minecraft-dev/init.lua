@@ -6,6 +6,7 @@ M.config = {}
 function M.setup(opts)
 	M.config = require("minecraft-dev.config").normalize(opts)
 	require("minecraft-dev.command").setup()
+	require("minecraft-dev.translation_diagnostics").setup()
 end
 
 ---@param spec table
@@ -38,6 +39,12 @@ end
 ---@return table
 function M.sort_translations(options)
 	return require("minecraft-dev.translations").sort_buffer(options)
+end
+
+---@param options? { buffer?: integer, default_path?: string }
+---@return table
+function M.diagnose_translations(options)
+	return require("minecraft-dev.translation_diagnostics").diagnose_buffer(options)
 end
 
 function M.reload()

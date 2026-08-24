@@ -452,6 +452,129 @@ local function translation_format(file_path)
 	return extension
 end
 
+M.format_for_path = translation_format
+
+local function position_at(content, index)
+	local before = content:sub(1, index - 1)
+	local _, line_count = before:gsub("\n", "")
+	local last_newline = before:match(".*()\n") or 0
+	return line_count, #before - last_newline
+end
+
+local function inspect_lang(content)
+	local entries, issues, seen = {}, {}, {}
+	local lines = vim.split(content, "\n", { plain = true })
+	if content:sub(-1) == "\n" then
+		table.remove(lines)
+	end
+	for line_number, line in ipairs(lines) do
+		local trimmed = vim.trim(line)
+		if trimmed ~= "" and not trimmed:match("^#") then
+			local separator = line:find("=", 1, true)
+			if separator == nil then
+				table.insert(issues, { code = "invalid_lang", lnum = line_number - 1, col = 0, end_col = #line })
+			else
+				local key = line:sub(1, separator - 1)
+				local trimmed_key = vim.trim(key)
+				if trimmed_key == "" then
+					table.insert(
+						issues,
+						{ code = "empty_key", lnum = line_number - 1, col = 0, end_col = math.max(#key, 1) }
+					)
+				else
+					local entry = {
+						key = key,
+						value = line:sub(separator + 1),
+						lnum = line_number - 1,
+						col = 0,
+						end_col = #key,
+					}
+					table.insert(entries, entry)
+					if key ~= trimmed_key then
+						table.insert(issues, vim.tbl_extend("force", { code = "whitespace_key" }, entry))
+					end
+					if seen[key] then
+						table.insert(issues, vim.tbl_extend("force", { code = "duplicate_key" }, entry))
+					else
+						seen[key] = true
+					end
+				end
+			end
+		end
+	end
+	return entries, issues
+end
+
+local function inspect_json(content)
+	local ok, decoded = pcall(vim.json.decode, content)
+	if not ok then
+		return {}, { { code = "invalid_json", detail = decoded, lnum = 0, col = 0, end_col = 1 } }
+	end
+	if type(decoded) ~= "table" or vim.islist(decoded) then
+		return {}, { { code = "invalid_root", lnum = 0, col = 0, end_col = 1 } }
+	end
+	for key, value in pairs(decoded) do
+		if type(value) ~= "string" then
+			return {}, { { code = "invalid_value", detail = key, key = key, lnum = 0, col = 0, end_col = 1 } }
+		end
+	end
+
+	local entries, issues, seen = {}, {}, {}
+	local index = skip_whitespace(content, 1) + 1
+	index = skip_whitespace(content, index)
+	while index <= #content and content:sub(index, index) ~= "}" do
+		local key_start = index
+		local encoded_key
+		encoded_key, index = scan_string(content, index)
+		if encoded_key == nil then
+			return {}, { { code = "invalid_json", lnum = 0, col = 0, end_col = 1 } }
+		end
+		local key = vim.json.decode(encoded_key)
+		index = skip_whitespace(content, index)
+		if content:sub(index, index) ~= ":" then
+			return {}, { { code = "invalid_json", lnum = 0, col = 0, end_col = 1 } }
+		end
+		index = skip_whitespace(content, index + 1)
+		local encoded_value
+		encoded_value, index = scan_string(content, index)
+		if encoded_value == nil then
+			return {}, { { code = "invalid_json", lnum = 0, col = 0, end_col = 1 } }
+		end
+		local lnum, col = position_at(content, key_start)
+		local entry = {
+			key = key,
+			value = vim.json.decode(encoded_value),
+			lnum = lnum,
+			col = col,
+			end_col = col + #encoded_key,
+		}
+		table.insert(entries, entry)
+		if seen[key] then
+			table.insert(issues, vim.tbl_extend("force", { code = "duplicate_key" }, entry))
+		else
+			seen[key] = true
+		end
+		index = skip_whitespace(content, index)
+		if content:sub(index, index) == "," then
+			index = skip_whitespace(content, index + 1)
+		end
+	end
+	return entries, issues
+end
+
+---@param content string
+---@param format "json"|"lang"
+---@return { entries: table[], issues: table[] }
+function M.inspect_content(content, format)
+	local entries, issues
+	if format == "lang" then
+		entries, issues = inspect_lang(content)
+	else
+		entries, issues = inspect_json(content)
+	end
+	return { entries = entries, issues = issues }
+end
+
 local function read_file(file_path)
 	local handle = io.open(file_path, "r")
 	if handle == nil then

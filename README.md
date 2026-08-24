@@ -56,6 +56,12 @@ require("minecraft-dev").setup({
 		debug = true, -- optional
 	},
 	defaults = {
+		translations = {
+			order = "ascending",
+			default_locale = "en_us",
+			template_path = "minecraft_localization_template.lang", -- optional
+			diagnostics = true,
+		},
 		paper = {
 			version = "1.21",
 			language = "java",
@@ -100,6 +106,12 @@ alphabetically. `template` loads `defaults.translations.template_path` and suppo
 patterns, comments, and empty-line groups. Lua callers may override it with `template_path` or `template_content`.
 Legacy sorting keeps attached comments, blank separators, values, and the final newline. Invalid or duplicate entries
 fail without rewriting the buffer.
+
+Translation diagnostics are enabled by default for JSON and `.lang` buffers. They report duplicate or malformed
+entries, key whitespace, locale-only keys, and format placeholders that differ from the sibling default locale. The
+public `require("minecraft-dev").diagnose_translations({ buffer = 0 })` entrypoint runs the same check manually;
+setting `defaults.translations.diagnostics = false` disables the automatic buffer events without affecting LSP or
+other diagnostic namespaces.
 
 When generating a Fabric project, the plugin now asks for:
 

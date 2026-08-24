@@ -19,6 +19,7 @@ M.default_config = {
 			default_locale = "en_us",
 			indent = "  ",
 			template_path = nil,
+			diagnostics = true,
 		},
 		paper = {
 			version = "1.21",
@@ -125,6 +126,9 @@ M.default_config = {
 			not_translation_file = "Current buffer is not a Minecraft translation file: %s",
 			missing_default = "Default locale translation file was not found: %s",
 			missing_template = "Minecraft translation sorting template was not found: %s",
+			whitespace_key = "Translation key contains whitespace at the start or end: %s",
+			missing_default_key = "Translation key is not included in the default locale: %s",
+			format_mismatch = "Translation format arguments do not match the default locale: %s",
 			buffer_unloaded = "Translation buffer is not loaded.",
 			failed = "Failed to sort Minecraft translations: %s",
 		},
@@ -196,6 +200,9 @@ function M.normalize(opts)
 	end
 	if type(translations.template_path) ~= "string" or vim.trim(translations.template_path) == "" then
 		translations.template_path = nil
+	end
+	if type(translations.diagnostics) ~= "boolean" then
+		translations.diagnostics = true
 	end
 	return normalized
 end

@@ -39,6 +39,17 @@
 - [x] README、配置和帮助文档
 - [x] Neovim MCP 目标测试与完整快速回归
 
+### P2.3：Translation 文件诊断（已完成）
+
+- [x] 读取上游 `TranslationFileAnnotator` 与 inspection 语义
+- [x] 确认 Neovim diagnostic/autocmd 官方 API 与依赖边界
+- [x] 为 JSON / `.lang` 建立带位置的 entry 模型
+- [x] 诊断重复 key、首尾空白、残缺 `.lang` 行和非法 value
+- [x] 对非默认 locale 诊断默认文件缺失的 key 与 format 签名差异
+- [x] 注册自动诊断生命周期与公开手动入口
+- [x] 添加本地化、配置、README 和目标场景测试
+- [x] 通过 LSP MCP、Neovim MCP 和静态检查
+
 ## 阶段 3：项目元数据与配置文件
 
 - [ ] `plugin.yml` / `paper-plugin.yml` 结构、类引用和依赖诊断
@@ -82,3 +93,4 @@
 - P2.1 静态检查：生产 Lua 通过 Stylua check，目标 diff 通过 `git diff --check`。
 - P2.2 `.lang` / template：Neovim MCP `test_refactor.lua: ok`，命令补全和真实 buffer 写回场景通过，最终为 normal mode。
 - P2.2 静态检查：目标生产 Lua 通过 Stylua check，目标 diff 通过 `git diff --check`；LSP MCP 对 `translations.lua` 返回零诊断。
+- P2.3 文件 diagnostics：JSON / `.lang` 位置、默认 locale、format、namespace 隔离和 autocmd 幂等场景均由 Neovim MCP 完整回归覆盖；核心三个 Lua 文件的 LSP MCP diagnostics 为零。

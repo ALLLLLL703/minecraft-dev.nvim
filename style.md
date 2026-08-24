@@ -291,3 +291,25 @@ require("minecraft-dev").generate({
 - DuckDuckGo 与 GitHub MCP 未找到面向 Neovim/Lua、维护中的 Minecraft `.lang` 排序或模板解析依赖。该语法是窄行格式，复用 Neovim 内置 buffer、filesystem 和 Lua pattern 能力，不增加运行时依赖。
 - 目标场景覆盖 `.lang` ascending/descending/like-default/template、注释与空行、量词、重复 key、未知行、缺失模板、JSON 回归和真实 buffer 写回。
 - 完成后通过已连接 Neovim MCP 运行目标场景、`test/test_refactor.lua`，并检查命令补全、最终 mode、Stylua 与 `git diff --check`。
+
+## 当前实现切片：P2.3 Translation 文件诊断
+
+### 上游语义与 Neovim 适配
+
+- 对标上游 `TranslationFileAnnotator` 的残缺 entry、首尾空白、重复 key 和非默认 locale 未匹配 key；源码调用点的 `NoTranslationInspection`、format 数量与类型检查留给需要 LSP/语法树语义的下一切片。
+- JSON 与 `.lang` diagnostic scanner 输出统一的 entry 位置、key 和 value，并与严格排序 parser 同驻 `translations.lua`、复用格式识别和 JSON string scan primitives；diagnostics 可容错收集多项问题，排序遇到会丢数据的输入则立即失败。
+- 默认 locale 检查只读取同目录、同扩展名文件。默认文件不存在时不产生每个 key 的噪声诊断；文件存在且有效时，目标 locale 独有 key 标为 warning。
+- format 签名以 Minecraft/Java Formatter 的 `%s`、`%d`、位置索引和 `%%` 为基础；目标 locale 与默认 locale 的参数集合不一致时标为 warning，不尝试从纯 translation 文件推断 Java/Kotlin 实参类型。
+
+### 生命周期与公开接口
+
+- 新增 `require("minecraft-dev").diagnose_translations({ buffer = ... })`，返回结构化 diagnostics，并通过专用 namespace 写入 `vim.diagnostic`。
+- `setup()` 使用单一 augroup 监听 translation buffer 的 `BufEnter`、`BufWritePost`、`TextChanged` 和 `TextChangedI`；重复 setup 先清理 augroup，避免 autocmd 叠加。
+- `defaults.translations.diagnostics` 控制自动诊断，默认开启。非 translation buffer 清空本插件 namespace，不影响 LSP 或其他插件 diagnostics。
+- 所有 diagnostic message 走 `config.messages.translations`，`source` 固定为 `minecraft-dev.nvim`，code 使用稳定标识符供后续 code action 消费。
+
+### 依赖与验证
+
+- DuckDuckGo 与 GitHub MCP 未找到维护中的 Neovim Minecraft translation diagnostic 组件；通用 JSON diagnostics 也不覆盖默认 locale 与 Minecraft format 语义。继续复用现有 parser 和 Neovim diagnostic API，不增加依赖。
+- 测试覆盖 JSON / `.lang` 精确位置、重复项、空白 key、非法行、非字符串 JSON value、default mismatch、format mismatch、默认文件缺失、autocmd 幂等与 namespace 隔离。
+- 通过已连接 Neovim MCP 检查 diagnostic 实际写入、重新诊断和清理，并运行完整快速回归。
