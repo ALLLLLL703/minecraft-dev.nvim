@@ -91,6 +91,7 @@ GmcPro
 GmcPro [bungeecord|fabric|paper|spigot|sponge|velocity|waterfall] [gradle|maven] minecraft_version [path]
 MinecraftDevNew
 MinecraftDevSortTranslations [ascending|descending|like-default|template]
+MinecraftDevGotoTranslation [key]
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -112,6 +113,13 @@ entries, key whitespace, locale-only keys, and format placeholders that differ f
 public `require("minecraft-dev").diagnose_translations({ buffer = 0 })` entrypoint runs the same check manually;
 setting `defaults.translations.diagnostics = false` disables the automatic buffer events without affecting LSP or
 other diagnostic namespaces.
+
+`:MinecraftDevGotoTranslation` opens the matching default-locale entry for an explicit key or the key under the
+cursor. Command-line completion is backed by all default locale files under the project root and preserves duplicate
+keys from different resource namespaces as multiple navigation targets. Non-default translation buffers receive a
+`completefunc` source for `CTRL-X CTRL-U` only when they do not already define one; LSP `omnifunc` is never replaced.
+Lua integrations can use `list_translation_keys()`, `complete_translations()`, and `goto_translation({ open = false })`
+without opening UI.
 
 When generating a Fabric project, the plugin now asks for:
 

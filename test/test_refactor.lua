@@ -3314,6 +3314,62 @@ local function test_translation_file_diagnostics()
 	vim.fn.delete(translation_root, "rf")
 end
 
+local function test_translation_index_navigation_and_completion()
+	local minecraft_dev = require("minecraft-dev")
+	local root = vim.fn.tempname()
+	vim.fn.mkdir(root .. "/.git", "p")
+	local demo_lang = root .. "/src/main/resources/assets/demo/lang"
+	local other_lang = root .. "/src/main/resources/assets/other/lang"
+	local broken_lang = root .. "/src/main/resources/assets/broken/lang"
+	vim.fn.mkdir(demo_lang, "p")
+	vim.fn.mkdir(other_lang, "p")
+	vim.fn.mkdir(broken_lang, "p")
+	vim.fn.writefile({ "item.demo.z=Zed", "item.demo.a=Alpha" }, demo_lang .. "/en_us.lang")
+	vim.fn.writefile({ '{"item.other.a":"Other"}' }, other_lang .. "/en_us.json")
+	vim.fn.writefile({ "{" }, broken_lang .. "/en_us.json")
+
+	local buffer = vim.api.nvim_create_buf(true, false)
+	vim.api.nvim_buf_set_name(buffer, demo_lang .. "/fr_fr.lang")
+	vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "item.demo.a=Un alpha" })
+	local indexed = minecraft_dev.list_translation_keys({ buffer = buffer, root = root, prefix = "item." })
+	assert_equal(indexed.status, "indexed", "public API should index default translation files")
+	assert_equal(indexed.keys, { "item.demo.a", "item.demo.z", "item.other.a" }, "translation keys should be unique and dotted-key sorted")
+	assert_equal(#indexed.warnings, 1, "a malformed default locale should not block valid namespaces")
+
+	local completion = minecraft_dev.complete_translations({ buffer = buffer, root = root, prefix = "item." })
+	local completion_words = {}
+	for _, item in ipairs(completion.items) do table.insert(completion_words, item.word) end
+	assert_equal(completion_words, { "item.demo.z", "item.other.a" }, "completion should exclude keys already present in the current locale")
+	assert_truthy(completion.items[1].menu:find("en_us", 1, true) ~= nil, "completion should identify the default locale")
+
+	local explicit = minecraft_dev.goto_translation({ buffer = buffer, root = root, key = "item.demo.z", open = false })
+	assert_equal(explicit.status, "found", "explicit translation navigation should resolve a default entry")
+	assert_equal(explicit.locations[1].path, demo_lang .. "/en_us.lang", "navigation should retain the source file")
+	assert_equal(explicit.locations[1].lnum, 0, "navigation should retain the entry line")
+	vim.api.nvim_set_current_buf(buffer)
+	vim.api.nvim_win_set_cursor(0, { 1, 3 })
+	local current = minecraft_dev.goto_translation({ buffer = buffer, root = root, open = false })
+	assert_equal(current.key, "item.demo.a", "navigation should infer the key under the cursor")
+
+	local original_omnifunc = vim.bo[buffer].omnifunc
+	vim.cmd("doautocmd BufEnter")
+	assert_equal(vim.bo[buffer].omnifunc, original_omnifunc, "translation completion should not replace LSP omnifunc")
+	assert_equal(vim.bo[buffer].completefunc, "v:lua.MinecraftDevTranslationComplete", "translation buffers should receive an opt-in completefunc")
+	assert_truthy(vim.fn.exists(":MinecraftDevGotoTranslation") == 2, "setup should register translation navigation")
+	assert_equal(
+		vim.fn.getcompletion("MinecraftDevGotoTranslation item.demo.z", "cmdline"),
+		{ "item.demo.z" },
+		"translation navigation command completion should use the project index"
+	)
+	minecraft_dev.setup()
+	local first_count = #vim.api.nvim_get_autocmds({ group = "MinecraftDevTranslationIndex" })
+	minecraft_dev.setup()
+	assert_equal(#vim.api.nvim_get_autocmds({ group = "MinecraftDevTranslationIndex" }), first_count, "translation index setup should be idempotent")
+
+	vim.api.nvim_buf_delete(buffer, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -3373,6 +3429,7 @@ local function run()
 	test_translation_lang_and_template_sorting()
 	test_translation_buffer_and_command()
 	test_translation_file_diagnostics()
+	test_translation_index_navigation_and_completion()
 	print("test_refactor.lua: ok")
 end
 

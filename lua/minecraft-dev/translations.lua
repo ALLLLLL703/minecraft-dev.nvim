@@ -189,6 +189,8 @@ local function key_less(left, right)
 	return #left_parts < #right_parts
 end
 
+M.key_less = key_less
+
 local function sorted_keys(values, descending)
 	local keys = vim.tbl_keys(values)
 	table.sort(keys, function(left, right)

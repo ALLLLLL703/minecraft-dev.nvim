@@ -50,6 +50,17 @@
 - [x] 添加本地化、配置、README 和目标场景测试
 - [x] 通过 LSP MCP、Neovim MCP 和静态检查
 
+### P2.4：Translation 索引、跳转与补全（已完成）
+
+- [x] 读取上游 index、reference、completion 和 usages 实现
+- [x] 确认本地 filesystem/root API 与依赖边界
+- [x] 建立项目 default locale 索引并隔离 namespace
+- [x] 提供 key 列表、缺失 key completion 和精确位置
+- [x] 实现当前 key / 显式 key 跳转与命令补全
+- [x] 注册不覆盖 LSP omnifunc 的 `completefunc` 入口
+- [x] 添加配置、消息、README 与场景测试
+- [x] 通过 LSP MCP、Neovim MCP 和静态检查
+
 ## 阶段 3：项目元数据与配置文件
 
 - [ ] `plugin.yml` / `paper-plugin.yml` 结构、类引用和依赖诊断
@@ -94,3 +105,4 @@
 - P2.2 `.lang` / template：Neovim MCP `test_refactor.lua: ok`，命令补全和真实 buffer 写回场景通过，最终为 normal mode。
 - P2.2 静态检查：目标生产 Lua 通过 Stylua check，目标 diff 通过 `git diff --check`；LSP MCP 对 `translations.lua` 返回零诊断。
 - P2.3 文件 diagnostics：JSON / `.lang` 位置、默认 locale、format、namespace 隔离和 autocmd 幂等场景均由 Neovim MCP 完整回归覆盖；核心三个 Lua 文件的 LSP MCP diagnostics 为零。
+- P2.4 translation index：多 namespace、损坏文件隔离、completion 排除、光标/显式跳转、命令补全和 augroup 幂等场景通过 Neovim MCP；`translation_index.lua` 与公开入口的 LSP MCP diagnostics 为零。

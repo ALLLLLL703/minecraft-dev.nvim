@@ -313,3 +313,24 @@ require("minecraft-dev").generate({
 - DuckDuckGo 与 GitHub MCP 未找到维护中的 Neovim Minecraft translation diagnostic 组件；通用 JSON diagnostics 也不覆盖默认 locale 与 Minecraft format 语义。继续复用现有 parser 和 Neovim diagnostic API，不增加依赖。
 - 测试覆盖 JSON / `.lang` 精确位置、重复项、空白 key、非法行、非字符串 JSON value、default mismatch、format mismatch、默认文件缺失、autocmd 幂等与 namespace 隔离。
 - 通过已连接 Neovim MCP 检查 diagnostic 实际写入、重新诊断和清理，并运行完整快速回归。
+
+## 当前实现切片：P2.4 Translation 索引、跳转与补全
+
+### 索引边界
+
+- 仅递归项目根中的 `assets/<namespace>/lang/<default_locale>.json|lang`，跳过 `.git`、`.gradle`、`build`、`target` 和隐藏缓存目录，不跟随目录 symlink。
+- 项目根从当前 buffer 向上查找 `.git`、`settings.gradle(.kts)`、`build.gradle(.kts)` 或 `pom.xml`；没有 marker 时回退当前工作目录。调用方可以显式传 `root` 以获得确定性行为。
+- 索引复用 `translations.inspect_content()` 的带位置 entry；无效文件被记录为结构化 warning，不让一个损坏 locale 阻断其他 namespace。
+- 同 key 可存在于多个 namespace，索引保留全部位置；key completion 去重并按 dotted-key comparator 排序。
+
+### 公开行为
+
+- `list_translation_keys(options)` 返回 default locale 条目和索引 warnings；`complete_translations(options)` 排除当前 locale 已存在的 key，返回带默认文本提示的 completion items。
+- `goto_translation(options)` 接收显式 key，或从当前 translation entry 的光标位置解析 key。单个结果直接打开，多结果通过 `vim.ui.select` 选择；`open = false` 只返回位置，供自动化和其他插件消费。
+- `:MinecraftDevGotoTranslation [key]` 使用索引驱动命令补全。translation buffer 在 `completefunc` 为空时安装专用入口，保留现有 LSP `omnifunc` 和用户配置。
+- setup 使用独立、可清理的 augroup；非 translation buffer 和默认 locale 不修改 `completefunc`。
+
+### 依赖与验证
+
+- DuckDuckGo 与 GitHub MCP 未找到维护中的 Neovim Minecraft translation key index。`nvim-cmp` 是通用 UI/聚合器，不能替代领域索引，且不应成为核心依赖。
+- 使用 Neovim 内置 `vim.fs`、buffer API 与现有 parser；测试覆盖多 namespace、JSON / `.lang`、损坏文件、去重排序、排除已有 key、光标 key、单/多目标、命令补全和 setup 幂等。

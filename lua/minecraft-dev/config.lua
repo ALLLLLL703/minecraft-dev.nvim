@@ -47,6 +47,9 @@ M.default_config = {
 		},
 	},
 	prompts = {
+		translations = {
+			select_translation = "Select Minecraft translation",
+		},
 		custom = {
 			select_template = "Select Minecraft project template",
 			directory = "Project directory: ",
@@ -129,6 +132,8 @@ M.default_config = {
 			whitespace_key = "Translation key contains whitespace at the start or end: %s",
 			missing_default_key = "Translation key is not included in the default locale: %s",
 			format_mismatch = "Translation format arguments do not match the default locale: %s",
+			translation_key_required = "Place the cursor on a translation key or provide one explicitly.",
+			translation_not_found = "Default locale translation was not found: %s",
 			buffer_unloaded = "Translation buffer is not loaded.",
 			failed = "Failed to sort Minecraft translations: %s",
 		},
