@@ -95,7 +95,12 @@ M.which_language = M.which_fabric_language
 ---@param callback fun(select_value: "client"|"server"|"both")
 function M.which_fabric_side(callback)
 	local config = require("minecraft-dev").config
-	select_with_default({ "client", "server", "both" }, config.prompts.fabric.select_side, config.defaults.fabric.side, callback)
+	select_with_default(
+		{ "client", "server", "both" },
+		config.prompts.fabric.select_side,
+		config.defaults.fabric.side,
+		callback
+	)
 end
 
 ---@param prompt string

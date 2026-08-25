@@ -1,0 +1,26 @@
+[mcp_servers.neovim]
+command = "npx"
+args = ["-y", "mcp-neovim-server"]
+[mcp_servers.lsp]
+command = "mcp-language-server"
+args = [
+	"--workspace",
+	"/home/sanae/CodeProject/luaPro/nvim-plug/minecraft-dev.nvim/",
+	"--lsp",
+	"lua-language-server",
+]
+
+[mcp_servers.lsp.tools.diagnostics]
+approval_mode = "approve"
+[mcp_servers.neovim.env]
+ALLOW_SHELL_COMMANDS = "true"
+NVIM_SOCKET_PATH = "/tmp/nvim"
+
+[mcp_servers.neovim.tools.vim_health]
+approval_mode = "approve"
+
+[mcp_servers.neovim.tools.vim_command]
+approval_mode = "approve"
+
+[mcp_servers.neovim.tools.vim_status]
+approval_mode = "approve"

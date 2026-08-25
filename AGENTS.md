@@ -1,37 +1,12 @@
-# AGENTS.md
+# 仓库代理说明
 
-## 会话目的
-- 完成这个对标idea的minecraft-dev的插件
-## skills
-
-### 常开启skill
-- grill-me
-- maintainable-code
-
-## mcp
-- context7和open-websearch随便用,只要能解决问题即可
-- 寻找插件源代码以及从别人配置中提取灵感时需要使用github
-- context7需要在寻找api时优先使用
-- open-websearch用于寻找具体问题解决方案时使用
-- 需要经常性的使用github探索优质插件(以及neovim代码仓库)
-- 需要经常性的使用githubmcp 探索 https://github.com/minecraft-dev/MinecraftDev,并复现其中功能
-
-## git
-- 每过一个阶段的实现后都要提交代码
-- 每次提交完成后都要使用github mcp进行一个推送
-- 每次应用配置修改后都必须验证 Neovim 仍可正常交互启动，禁止留下错误循环、hit-enter 阻塞或无法进入编辑界面的启动路径
-
-<!-- ## code style
-- 查看[style.md](./agent-instructions/STYLE.md) -->
-
-
-## 会话规则
-- 内容输出和内容总结输出(写入文件的内容总结)必须用中文,其他情况使用英文(比如注释,git操作)
-
-
-## question规则
-- 一切提问走question工具
-- 如果有任何需要细化决策树或这需要决策的地方就调用question工具
-
-## test
-- 测试通过连接的neovim mcp进行而不是手动启动neovim实例
+- 每个任务开始前读取 `agent-instructions/PROJECT.md`，了解项目目标、边界和仓库地图。
+- 每个任务都读取 `agent-instructions/GENERAL.md`。
+- 每个任务都读取 `agent-instructions/MCP.md`，按任务类型选择 MCP、记录证据并执行回退。
+- 每个任务都读取 `agent-instructions/COLLABORATION.md`；只有用户明确说明多个代理共享同一工作树时，才启用其中的协作流程。
+- 修改源码、测试、模板或配置前读取 `agent-instructions/STYLE.md`。
+- 实现、调试、测试、上游同步或 Git 操作涉及对应流程时，读取 `agent-instructions/WORKFLOW.md`。
+- 编写实现计划前读取 `agent-instructions/PLAN.md`。
+- 审查变更前读取 `agent-instructions/REVIEW.md`。
+- 更深目录中的 `AGENTS.md`、`STYLE.md` 或 `DESIGN.md` 可补充本文件；冲突时以作用域更具体的规则为准。
+- 同一规则只在一个说明文件中维护；其他文件应引用它，不得复制后形成多个事实来源。
