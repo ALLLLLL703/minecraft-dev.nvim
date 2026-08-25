@@ -18,10 +18,10 @@
 | Creator / 平台项目生成 | 已实现 | Paper、Spigot、BungeeCord、Waterfall、Velocity、Sponge、Fabric、Forge、NeoForge、Architectury、自定义 descriptor |
 | Translation 排序 | 已实现 | JSON / `.lang` 的 ascending、descending、like-default、project template |
 | Translation 编辑与诊断 | 已实现 | 重复项、空白 key、默认 locale 对齐、format 参数、deprecated key、跳转、补全与有界引用查找 |
-| Bukkit / Forge / Fabric 元数据 | 待实现 | `plugin.yml`、`mods.toml`、`fabric.mod.json` 的结构诊断、补全与引用 |
-| Mixin config 与源码智能 | 待实现 | config 诊断、target 跳转、查找 mixin、生成 accessor/overwrite/shadow/soft-implements |
-| MCP mappings / AT / AW / coremod | 待实现 | 查映射、复制/跳转 Access Transformer、Access Widener、coremod target |
-| NBT | 待实现 | 二进制 NBT 与文本视图互转、编辑、校验和安全写回 |
+| Bukkit / Forge / Fabric 元数据 | 已实现 | `plugin.yml`、`mods.toml`、`fabric.mod.json` 的结构诊断、补全与引用 |
+| Mixin config 与源码智能 | 已实现 | config 诊断、target 跳转、查找 mixin、生成 accessor/overwrite/shadow/soft-implements |
+| MCP mappings / AT / AW / coremod | 已实现 | 查映射、复制/跳转 Access Transformer、Access Widener、coremod target |
+| NBT | 已实现 | 二进制 NBT 与文本视图互转、编辑、校验和安全写回 |
 | Event / class generation | 待实现 | event listener、Minecraft class 和平台入口生成 |
 | Color / line markers | 待分类 | 优先复用 LSP、Tree-sitter 和 Neovim highlight；仅补 Minecraft 语义差异 |
 | Facet / IDE project model | 待分类 | 预期为 IntelliJ 专属；以文件系统、Gradle/Maven/LSP 能力替代 |
@@ -170,17 +170,28 @@
 - [x] 写出 Neovim/LSP/Tree-sitter 可复用边界和 IntelliJ PSI 差异
 - [x] 先写 mapping/SRG 查询与无索引失败场景
 - [x] 实现 AT/AW/coremod target 解析、复制、跳转和重复项诊断
-- [ ] 实现 Mixin target 查找、引用复制与安全生成动作
-- [ ] 暴露配置、命令、API、补全和帮助文档
-- [ ] 通过连接中的 Neovim MCP 场景、全量回归与 JVM LSP 零客户端检查
+- [x] 实现 Mixin target 查找、引用复制与安全生成动作
+- [x] 暴露配置、命令、API、补全和帮助文档
+- [x] 通过连接中的 Neovim MCP 场景、全量回归与 JVM LSP 零客户端检查
+
+### P5.2：Mixin 源码查找与安全生成
+
+- [x] 先写 target 查找、重复生成、非 Mixin buffer 和无法解析签名场景
+- [x] 索引 Java/Kotlin `@Mixin` target 并提供查找/跳转
+- [x] 实现 accessor getter/setter 与 invoker 生成
+- [x] 实现 shadow 与 overwrite fallback 生成
+- [x] 实现 soft-implements 前缀方法生成
+- [x] 确保单次 buffer edit 可撤销，失败时不改 buffer
+- [x] 暴露命令、API、可配置消息和文档
+- [x] 通过 Neovim MCP、Lua LSP 与全量回归
 
 - [x] 盘点可由 JDTLS/Kotlin LSP/Tree-sitter 提供的语义，避免重复实现
 - [x] 实现 mapping lookup 与 SRG 名称查询
 - [x] 实现 AT/AW/coremod target 复制、跳转和重复项诊断
-- [ ] 实现 Mixin target 查找与引用复制
-- [ ] 实现 accessor、overwrite、shadow、soft-implements 的安全生成动作
+- [x] 实现 Mixin target 查找与引用复制
+- [x] 实现 accessor、overwrite、shadow、soft-implements 的安全生成动作
 - [ ] 实现可迁移的 event listener 与 Minecraft class 生成
-- [ ] 为无 LSP、符号歧义、只读 buffer 和不完整项目添加失败场景
+- [x] 为无 LSP、符号歧义、只读 buffer 和不完整项目添加失败场景
 
 ## 阶段 6：最终审计与收尾
 

@@ -128,6 +128,9 @@ local function descriptor_for(raw, context, allow_void)
 	if not descriptor then
 		local qualified = context.imports[value] or JAVA_LANG[value]
 		if not qualified then
+			if value:match("^[A-Z]$") then
+				return nil
+			end
 			if value:find("%.") then
 				qualified = value
 			elseif value:match("^[%a_$][%w_$]*$") then
@@ -201,8 +204,10 @@ local function method_descriptor(node, buffer, language, context)
 	end
 	local kind = node:type()
 	local return_type
+	local return_source_type
 	if kind == "constructor_declaration" or kind == "secondary_constructor" then
 		return_type = "V"
+		return_source_type = "void"
 	else
 		local type_node = field(node, "type")
 		if not type_node and language == "kotlin" and parameters then
@@ -213,14 +218,14 @@ local function method_descriptor(node, buffer, language, context)
 				end
 			end
 		end
-		local raw = type_node and node_text(type_node, buffer) or (language == "kotlin" and "Unit" or nil)
-		return_type = language == "kotlin" and kotlin_descriptor(raw, context, true)
-			or descriptor_for(raw, context, true)
+		return_source_type = type_node and node_text(type_node, buffer) or (language == "kotlin" and "Unit" or nil)
+		return_type = language == "kotlin" and kotlin_descriptor(return_source_type, context, true)
+			or descriptor_for(return_source_type, context, true)
 	end
 	if not return_type then
 		return nil
 	end
-	return "(" .. table.concat(descriptors) .. ")" .. return_type, parameter_sources
+	return "(" .. table.concat(descriptors) .. ")" .. return_type, parameter_sources, return_source_type
 end
 
 local function modifiers(header)
@@ -299,7 +304,8 @@ local function collect_member(node, buffer, language, context, owner)
 		if kind == "constructor_declaration" then
 			name = "<init>"
 		end
-		local descriptor, parameters = method_descriptor(node, buffer, language, context)
+		local descriptor, parameters, return_source_type = method_descriptor(node, buffer, language, context)
+		local throws = header:match("%f[%w]throws%f[%W]%s+(.+)$")
 		return name
 				and {
 					{
@@ -307,6 +313,8 @@ local function collect_member(node, buffer, language, context, owner)
 						name = name,
 						descriptor = descriptor,
 						parameters = parameters,
+						return_source_type = return_source_type,
+						throws = throws,
 						owner = owner,
 						modifiers = modifiers(header),
 						lnum = start_row,
@@ -348,6 +356,8 @@ local function collect_classes(node, buffer, language, context, enclosing, outpu
 		end_col = end_col,
 		members = {},
 		language = language,
+		declaration_type = node:type(),
+		header = node_text(node, buffer):match("^[^{]*") or "",
 	}
 	table.insert(output, class)
 	local body = field(node, "body") or first_descendant(node, { class_body = true, enum_class_body = true })

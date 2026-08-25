@@ -182,15 +182,66 @@ local function forge_mod_ids(node, buffer)
 	return ids
 end
 
+local function declaration_header(text)
+	local boundary
+	for _, keyword in ipairs({ "class", "interface", "enum", "record", "object" }) do
+		local start = text:find("%s" .. keyword .. "%s+[%w_$]+")
+		if start and (not boundary or start < boundary) then
+			boundary = start
+		end
+	end
+	return boundary and text:sub(1, boundary) or (text:match("^[^{]*") or text)
+end
+
 local function annotation_names(node, buffer)
 	local text = vim.treesitter.get_node_text(node, buffer)
-	local header = text:match("^[^{]*") or text
+	local header = declaration_header(text)
 	local names = {}
 	for name in header:gmatch("@([%w_.$]+)") do
 		names[name] = true
 		names[name:match("([%w_$]+)$") or name] = true
 	end
 	return names
+end
+
+local function resolve_annotation_class(value, imports, package_name)
+	value = value:gsub("/", ".")
+	local first, rest = value:match("^([%w_$]+)%.(.+)$")
+	if first and imports[first] then
+		return imports[first] .. "." .. rest
+	end
+	if value:find("%.") then
+		return value
+	end
+	return imports[value] or (package_name ~= "" and (package_name .. "." .. value) or value)
+end
+
+local function mixin_targets(node, buffer, imports, package_name)
+	local text = vim.treesitter.get_node_text(node, buffer)
+	local header = declaration_header(text)
+	local targets, seen = {}, {}
+	local function add(value)
+		local resolved = resolve_annotation_class(value, imports, package_name)
+		if not seen[resolved] then
+			seen[resolved] = true
+			table.insert(targets, resolved)
+		end
+	end
+	for arguments in header:gmatch("@[%w_.$]*Mixin%s*(%b())") do
+		arguments = arguments:sub(2, -2)
+		for value in arguments:gmatch("([%w_.$]+)%.class") do
+			add(value)
+		end
+		for value in arguments:gmatch("([%w_.$]+)::class") do
+			add(value)
+		end
+		if arguments:match("%f[%w]targets%f[%W]") then
+			for value in arguments:gmatch("[\"']([^\"']+)[\"']") do
+				add(value)
+			end
+		end
+	end
+	return targets
 end
 
 local function collect_declarations(node, buffer, file, package_name, imports, output, enclosing)
@@ -202,7 +253,7 @@ local function collect_declarations(node, buffer, file, package_name, imports, o
 			local class_name = table.concat(nested, "$")
 			local start_row, start_col, end_row, end_col = name_node:range()
 			local declaration_lnum, declaration_col, declaration_end_lnum, declaration_end_col = node:range()
-			local header = vim.treesitter.get_node_text(node, buffer):match("^[^{]*") or ""
+			local header = declaration_header(vim.treesitter.get_node_text(node, buffer))
 			table.insert(output, {
 				name = name,
 				fqn = package_name ~= "" and (package_name .. "." .. class_name) or class_name,
@@ -221,6 +272,7 @@ local function collect_declarations(node, buffer, file, package_name, imports, o
 				parents = declaration_parents(node, buffer, file.language, imports, package_name),
 				forge_mod_ids = forge_mod_ids(node, buffer),
 				annotations = annotation_names(node, buffer),
+				mixin_targets = mixin_targets(node, buffer, imports, package_name),
 			})
 			next_enclosing = nested
 		end

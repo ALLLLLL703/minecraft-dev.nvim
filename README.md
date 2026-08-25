@@ -74,6 +74,9 @@ require("minecraft-dev").setup({
 		mappings = {
 			paths = { "/absolute/path/to/joined.tsrg" }, -- optional; .srg, .tsrg, and Tiny v2
 		},
+		mixin = {
+			indent = "\t",
+		},
 		nbt = {
 			python = "python3",
 			timeout_ms = 10000,
@@ -130,6 +133,8 @@ MinecraftDevCopyAt [member]
 MinecraftDevCopyAw [member]
 MinecraftDevCopyCoremodTarget [member]
 MinecraftDevCopyMixinTarget [member]
+MinecraftDevFindMixins [fully.qualified.Target]
+MinecraftDevGenerateMixinMember {accessor_getter|accessor_setter|invoker|shadow|overwrite|soft_implements} member [prefix]
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -219,7 +224,24 @@ methods to local Java/Kotlin source using Tree-sitter-derived JVM descriptors. F
 `:MinecraftDevCopyAt`, `:MinecraftDevCopyAw`, `:MinecraftDevCopyCoremodTarget`, and
 `:MinecraftDevCopyMixinTarget` produce the same target shapes as MinecraftDev. If a source type cannot be resolved
 deterministically, copying fails instead of guessing a descriptor. Lua integrations can use `lookup_mapping()`,
-`diagnose_access_rules()`, `goto_access_target()`, and `copy_jvm_target()`.
+`diagnose_access_rules()`, `complete_access_rules()`, `goto_access_target()`, and `copy_jvm_target()`. AT/AW buffers
+receive a buffer-local `completefunc` for modifiers/access kinds, local owners, members, and method descriptors without
+replacing an existing completion provider.
+
+`:MinecraftDevFindMixins` indexes Java and Kotlin `@Mixin(Target.class)`, `@Mixin(Target::class)`, and string `targets`
+declarations. A single match opens directly; multiple matches populate quickfix. `:MinecraftDevGenerateMixinMember`
+runs from a local Java target class and writes into its single local Java Mixin. It supports accessor getters/setters,
+invokers, shadows, overwrite fallbacks, and prefixed soft-implements methods. Lua callers can provide an explicit
+`source_buffer` and `target_buffer` through `generate_mixin_member()`; `find_mixins()` exposes the same index without
+opening buffers.
+
+Generation is deliberately fail-closed. It requires Tree-sitter to derive an exact JVM descriptor, rejects unresolved
+generic type variables, validates member kinds and matching `@Implements` prefixes, refuses non-Mixin/Kotlin target
+buffers, and detects an existing name+descriptor before editing. Each success is one buffer edit and is normally
+undoable with a single `u`; failures leave the buffer unchanged. Accessor and invoker bodies, and cases where upstream
+MinecraftDev would decompile unavailable bytecode, use explicit throwing fallbacks instead of guessed behavior.
+Fully-qualified Mixin annotations avoid silently rewriting imports. The Java-only generation boundary matches the
+upstream actions' Java PSI implementation; Kotlin `@Mixin` files remain searchable and navigable.
 
 `:MinecraftDevEditNbt` opens gzip, zlib, or uncompressed binary NBT as an editable typed JSON buffer. Every node keeps
 its exact NBT `type`; signed 64-bit `long` values use decimal strings, lists declare `element_type`, and compounds use

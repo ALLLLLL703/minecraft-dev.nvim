@@ -4184,6 +4184,9 @@ function _G.MinecraftDevTestMappingsAndAccessRules()
 	for _, item in ipairs(diagnosed_at.diagnostics) do at_codes[item.code] = true end
 	assert_truthy(at_codes.access_rule_duplicate, "duplicate AT entries should diagnose")
 	assert_truthy(at_codes.access_modifier_invalid, "invalid AT modifiers should diagnose")
+	assert_equal(rules.complete({ buffer = at_buffer, format = "at", line = "pub", prefix = "pub" }).items[1].word, "public", "AT modifiers should complete")
+	assert_equal(rules.complete({ buffer = at_buffer, format = "at", line = "public test.Ex", prefix = "test.Ex" }).items[1].word, "test.Example", "AT owners should complete from local source")
+	assert_equal(rules.complete({ buffer = at_buffer, format = "at", line = "public test.Example ru", prefix = "ru" }).items[1].word, "run(I)Ljava/lang/String;", "AT methods should complete with descriptors")
 	assert_equal(rules.goto_target({ buffer = at_buffer, format = "at", row = 2, open = false }).member.name, "run", "AT method target should navigate to source")
 
 	local aw_path = resources .. "/demo.accesswidener"
@@ -4200,6 +4203,7 @@ function _G.MinecraftDevTestMappingsAndAccessRules()
 	for _, item in ipairs(diagnosed_aw.diagnostics) do aw_codes[item.code] = true end
 	assert_truthy(aw_codes.access_rule_duplicate, "duplicate AW entries should diagnose")
 	assert_truthy(aw_codes.access_kind_invalid, "invalid AW access/kind combinations should diagnose")
+	assert_equal(rules.complete({ buffer = aw_buffer, format = "aw", line = "accessible field test/Example co", prefix = "co" }).items[1].word, "count", "AW fields should complete from local source")
 	assert_equal(rules.goto_target({ buffer = aw_buffer, format = "aw", row = 1, open = false }).member.name, "count", "AW field target should navigate to source")
 
 	local coremod_path = resources .. "/coremods.js"
@@ -4220,6 +4224,107 @@ function _G.MinecraftDevTestMappingsAndAccessRules()
 	vim.api.nvim_create_augroup("java_spotbugs", { clear = false })
 	vim.api.nvim_create_augroup("java_spotbugs_post", { clear = false })
 	vim.api.nvim_buf_delete(java_buffer, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
+function _G.MinecraftDevTestMixinSourceActions()
+	local minecraft_dev = require("minecraft-dev")
+	assert_equal(vim.fn.exists(":MinecraftDevFindMixins"), 2, "Mixin finder command should be registered")
+	assert_equal(vim.fn.exists(":MinecraftDevGenerateMixinMember"), 2, "Mixin generation command should be registered")
+	local root = vim.fn.tempname()
+	local target_dir = root .. "/src/main/java/test"
+	local mixin_dir = root .. "/src/main/java/test/mixin"
+	local kotlin_dir = root .. "/src/main/kotlin/test/mixin"
+	vim.fn.mkdir(root .. "/.git", "p")
+	vim.fn.mkdir(target_dir, "p")
+	vim.fn.mkdir(mixin_dir, "p")
+	vim.fn.mkdir(kotlin_dir, "p")
+	local target_path = target_dir .. "/Example.java"
+	vim.fn.writefile({
+		"package test;",
+		"public class Example<T> {",
+		"  private final int count = 0;",
+		"  private void hidden() {}",
+		"  public String run(int value) { return String.valueOf(value); }",
+		"  public void interfaceMethod(String input) {}",
+		"  public T mystery(T value) { return value; }",
+		"}",
+	}, target_path)
+	local mixin_path = mixin_dir .. "/ExampleMixin.java"
+	vim.fn.writefile({
+		"package test.mixin;",
+		"import org.spongepowered.asm.mixin.Mixin;",
+		"import org.spongepowered.asm.mixin.Implements;",
+		"import org.spongepowered.asm.mixin.Interface;",
+		"import test.Example;",
+		"@Mixin(Example.class)",
+		"@Implements(@Interface(iface = Runnable.class, prefix = \"iface$\"))",
+		"public class ExampleMixin {",
+		"}",
+	}, mixin_path)
+	vim.fn.writefile({
+		"package test.mixin",
+		"import org.spongepowered.asm.mixin.Mixin",
+		"import test.Example",
+		"@Mixin(Example::class)",
+		"class KotlinExampleMixin",
+	}, kotlin_dir .. "/KotlinExampleMixin.kt")
+	vim.fn.writefile({
+		"package test.mixin;",
+		"import org.spongepowered.asm.mixin.Mixin;",
+		"@Mixin(targets = {\"test.Example\"})",
+		"public class StringTargetMixin {}",
+	}, mixin_dir .. "/StringTargetMixin.java")
+	local target_buffer = vim.fn.bufadd(target_path)
+	vim.fn.bufload(target_buffer)
+	vim.bo[target_buffer].filetype = "java"
+	local mixin_buffer = vim.fn.bufadd(mixin_path)
+	vim.fn.bufload(mixin_buffer)
+	vim.bo[mixin_buffer].filetype = "java"
+
+	local actions = require("minecraft-dev.mixin_actions")
+	local found = actions.find_mixins({ buffer = target_buffer, target = "test.Example", open = false })
+	assert_equal(found.status, "found", "Mixin target search should complete")
+	assert_equal(#found.matches, 3, "class literal, Kotlin, and string @Mixin targets should be indexed")
+	assert_equal(actions.generate({ source_buffer = target_buffer, kind = "shadow", member = "hidden" }).error.code, "mixin_source_ambiguous", "implicit generation should fail on multiple matching Mixins")
+	local empty_root = root .. "/empty"
+	vim.fn.mkdir(empty_root .. "/.git", "p")
+	assert_equal(actions.generate({ source_buffer = target_buffer, root = empty_root, kind = "shadow", member = "hidden" }).error.code, "mixin_source_unresolved", "incomplete projects should fail without changing source")
+	vim.bo[mixin_buffer].modifiable = false
+	assert_equal(actions.generate({ source_buffer = target_buffer, target_buffer = mixin_buffer, kind = "shadow", member = "hidden" }).error.code, "mixin_buffer_readonly", "read-only Mixin buffers should fail structurally")
+	vim.bo[mixin_buffer].modifiable = true
+
+	local pristine_mixin = table.concat(vim.api.nvim_buf_get_lines(mixin_buffer, 0, -1, false), "\n")
+	local generated = actions.generate({ source_buffer = target_buffer, target_buffer = mixin_buffer, kind = "accessor_getter", member = "count" })
+	assert_equal(generated.status, "generated", "field accessor getter should generate")
+	local text = table.concat(vim.api.nvim_buf_get_lines(mixin_buffer, 0, -1, false), "\n")
+	assert_truthy(text:find("@org.spongepowered.asm.mixin.gen.Accessor", 1, true) ~= nil, "accessor annotation should be fully qualified")
+	assert_truthy(text:find("int getCount()", 1, true) ~= nil, "getter signature should use the source field type")
+	vim.api.nvim_buf_call(mixin_buffer, function() vim.cmd("silent undo") end)
+	assert_equal(table.concat(vim.api.nvim_buf_get_lines(mixin_buffer, 0, -1, false), "\n"), pristine_mixin, "one undo should revert one isolated generated member")
+	vim.api.nvim_buf_call(mixin_buffer, function() vim.cmd("silent redo") end)
+	local before_duplicate = text
+	assert_equal(actions.generate({ source_buffer = target_buffer, target_buffer = mixin_buffer, kind = "accessor_getter", member = "count" }).error.code, "mixin_member_duplicate", "duplicate accessor generation should fail")
+	assert_equal(table.concat(vim.api.nvim_buf_get_lines(mixin_buffer, 0, -1, false), "\n"), before_duplicate, "duplicate generation must not change the buffer")
+	assert_equal(actions.generate({ source_buffer = target_buffer, target_buffer = mixin_buffer, kind = "accessor_setter", member = "count" }).status, "generated", "field accessor setter should generate")
+	assert_equal(actions.generate({ source_buffer = target_buffer, target_buffer = mixin_buffer, kind = "invoker", member = "run" }).status, "generated", "method invoker should generate")
+	assert_equal(actions.generate({ source_buffer = target_buffer, target_buffer = mixin_buffer, kind = "shadow", member = "hidden" }).status, "generated", "shadow fallback should generate")
+	assert_equal(actions.generate({ source_buffer = target_buffer, target_buffer = mixin_buffer, kind = "overwrite", member = "run" }).status, "generated", "overwrite fallback should generate")
+	assert_equal(actions.generate({ source_buffer = target_buffer, target_buffer = mixin_buffer, kind = "soft_implements", member = "interfaceMethod", prefix = "iface$" }).status, "generated", "soft-implements fallback should generate")
+	text = table.concat(vim.api.nvim_buf_get_lines(mixin_buffer, 0, -1, false), "\n")
+	for _, expected in ipairs({ "setCount", "callRun", "@org.spongepowered.asm.mixin.Shadow", "@org.spongepowered.asm.mixin.Overwrite", "iface$interfaceMethod" }) do
+		assert_truthy(text:find(expected, 1, true) ~= nil, "generated Mixin source should contain " .. expected)
+	end
+
+	local unchanged_target = table.concat(vim.api.nvim_buf_get_lines(target_buffer, 0, -1, false), "\n")
+	assert_equal(actions.generate({ source_buffer = target_buffer, target_buffer = target_buffer, kind = "shadow", member = "hidden" }).error.code, "not_mixin_source", "generation should reject a non-Mixin target buffer")
+	assert_equal(table.concat(vim.api.nvim_buf_get_lines(target_buffer, 0, -1, false), "\n"), unchanged_target, "failed generation must not change a non-Mixin buffer")
+	assert_equal(actions.generate({ source_buffer = target_buffer, target_buffer = mixin_buffer, kind = "invoker", member = "mystery" }).error.code, "descriptor_unresolved", "unresolved generic descriptors should fail closed")
+
+	vim.api.nvim_create_augroup("java_spotbugs", { clear = false })
+	vim.api.nvim_create_augroup("java_spotbugs_post", { clear = false })
+	vim.api.nvim_buf_delete(target_buffer, { force = true })
+	vim.api.nvim_buf_delete(mixin_buffer, { force = true })
 	vim.fn.delete(root, "rf")
 end
 
@@ -4297,6 +4402,8 @@ local function run()
 	_G.MinecraftDevTestNbtEditing = nil
 	_G.MinecraftDevTestMappingsAndAccessRules()
 	_G.MinecraftDevTestMappingsAndAccessRules = nil
+	_G.MinecraftDevTestMixinSourceActions()
+	_G.MinecraftDevTestMixinSourceActions = nil
 	print("test_refactor.lua: ok")
 end
 

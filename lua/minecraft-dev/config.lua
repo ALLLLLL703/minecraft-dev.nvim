@@ -39,6 +39,9 @@ M.default_config = {
 		mappings = {
 			paths = {},
 		},
+		mixin = {
+			indent = "\t",
+		},
 		nbt = {
 			python = "python3",
 			timeout_ms = 10000,
@@ -75,6 +78,9 @@ M.default_config = {
 		},
 	},
 	prompts = {
+		mixin = {
+			find_title = "Minecraft Mixins for %s",
+		},
 		mappings = {
 			select_mapping = "Select Minecraft mapping",
 		},
@@ -158,6 +164,21 @@ M.default_config = {
 			class_unresolved = "JVM class was not found: %s",
 			target_format_invalid = "Unsupported target format: %s",
 			target_copied = "Copied Minecraft target: %s",
+		},
+		mixin_actions = {
+			mixin_target_required = "Provide or select a Mixin target class: %s",
+			mixin_source_unresolved = "No local Mixin source targets this class: %s",
+			mixin_source_ambiguous = "More than one local Mixin targets this class: %s",
+			not_mixin_source = "Target buffer does not contain a @Mixin class: %s",
+			mixin_generation_java_only = "Mixin source generation currently requires a Java target buffer: %s",
+			mixin_generation_kind_invalid = "Unsupported Mixin generation kind: %s",
+			mixin_generation_member_required = "Provide a source member name for Mixin generation: %s",
+			mixin_generation_member_kind = "Mixin action is not valid for this member kind: %s",
+			mixin_prefix_invalid = "Invalid soft-implements prefix: %s",
+			soft_implements_required = "Mixin is missing a matching @Implements prefix: %s",
+			mixin_member_duplicate = "Mixin member already exists: %s",
+			mixin_buffer_readonly = "Mixin target buffer is not modifiable: %s",
+			mixin_generated = "Generated Mixin member: %s",
 		},
 		project = {
 			generated = "Generated Minecraft project at %s",
@@ -443,6 +464,15 @@ function M.normalize(opts)
 	if type(normalized.defaults.mappings) ~= "table" then
 		---@diagnostic disable-next-line: inject-field, undefined-field
 		normalized.defaults.mappings = vim.deepcopy(M.default_config.defaults.mappings)
+	end
+	if type(normalized.defaults.mixin) ~= "table" then
+		---@diagnostic disable-next-line: inject-field, undefined-field
+		normalized.defaults.mixin = vim.deepcopy(M.default_config.defaults.mixin)
+	end
+	---@diagnostic disable-next-line: undefined-field
+	if type(normalized.defaults.mixin.indent) ~= "string" or normalized.defaults.mixin.indent:find("[\r\n]") then
+		---@diagnostic disable-next-line: undefined-field
+		normalized.defaults.mixin.indent = M.default_config.defaults.mixin.indent
 	end
 	---@diagnostic disable-next-line: undefined-field
 	local mapping_paths = normalized.defaults.mappings.paths

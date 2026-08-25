@@ -207,6 +207,12 @@ function M.diagnose_access_rules(options)
 	return require("minecraft-dev.access_rules").diagnose_buffer(options)
 end
 
+---@param options? { buffer?: integer, format?: "at"|"aw", line?: string, prefix?: string, root?: string, max_files?: integer }
+---@return table
+function M.complete_access_rules(options)
+	return require("minecraft-dev.access_rules").complete(options)
+end
+
 ---@param options? { buffer?: integer, format?: "at"|"aw"|"coremod", row?: integer, root?: string, open?: boolean, max_files?: integer }
 ---@return table
 function M.goto_access_target(options)
@@ -217,6 +223,18 @@ end
 ---@return table
 function M.copy_jvm_target(options)
 	return require("minecraft-dev.jvm_targets").copy(options)
+end
+
+---@param options? { buffer?: integer, target?: string, root?: string, row?: integer, open?: boolean, max_files?: integer }
+---@return table
+function M.find_mixins(options)
+	return require("minecraft-dev.mixin_actions").find_mixins(options)
+end
+
+---@param options { source_buffer?: integer, target_buffer?: integer, root?: string, kind: "accessor_getter"|"accessor_setter"|"invoker"|"shadow"|"overwrite"|"soft_implements", member: string, prefix?: string }
+---@return table
+function M.generate_mixin_member(options)
+	return require("minecraft-dev.mixin_actions").generate(options)
 end
 
 function M.reload()

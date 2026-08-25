@@ -37,6 +37,8 @@ function M.setup()
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevCopyAw")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevCopyCoremodTarget")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevCopyMixinTarget")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevFindMixins")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevGenerateMixinMember")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
@@ -203,6 +205,45 @@ function M.setup()
 	vim.api.nvim_create_user_command("MinecraftDevCopyMixinTarget", function(opts)
 		copy_target("mixin", opts.args)
 	end, { nargs = "?" })
+	vim.api.nvim_create_user_command("MinecraftDevFindMixins", function(opts)
+		local result = require("minecraft-dev").find_mixins({ target = opts.args ~= "" and opts.args or nil })
+		if result.status == "failed" then
+			notify.notify(
+				vim.log.levels.ERROR,
+				{ "mixin_actions", result.error.code },
+				tostring(result.error.detail or "")
+			)
+		end
+	end, { nargs = "?" })
+	vim.api.nvim_create_user_command("MinecraftDevGenerateMixinMember", function(opts)
+		local args = vim.split(vim.trim(opts.args), "%s+")
+		local result = require("minecraft-dev").generate_mixin_member({
+			kind = args[1],
+			member = args[2],
+			prefix = args[3],
+		})
+		if result.status == "generated" then
+			vim.api.nvim_set_current_buf(result.buffer)
+			vim.api.nvim_win_set_cursor(0, { result.line + 1, 0 })
+			notify.notify(vim.log.levels.INFO, { "mixin_actions", "mixin_generated" }, result.name)
+		else
+			notify.notify(
+				vim.log.levels.ERROR,
+				{ "mixin_actions", result.error.code },
+				tostring(result.error.detail or "")
+			)
+		end
+	end, {
+		nargs = "+",
+		complete = function(lead, command_line)
+			if #vim.split(vim.trim(command_line), "%s+") <= 2 then
+				return vim.tbl_filter(function(kind)
+					return vim.startswith(kind, lead)
+				end, { "accessor_getter", "accessor_setter", "invoker", "shadow", "overwrite", "soft_implements" })
+			end
+			return {}
+		end,
+	})
 end
 
 function M.dispatch(args)
