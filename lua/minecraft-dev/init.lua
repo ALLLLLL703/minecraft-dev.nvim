@@ -176,6 +176,24 @@ function M.goto_mixin_reference(options)
 	return require("minecraft-dev.mixin_metadata").goto_reference(options)
 end
 
+---@param options? { path?: string, sync?: boolean, callback?: fun(result: table) }
+---@return table
+function M.open_nbt(options)
+	return require("minecraft-dev.nbt").open(options)
+end
+
+---@param options? { buffer?: integer }
+---@return table
+function M.save_nbt(options)
+	return require("minecraft-dev.nbt").save_buffer(options)
+end
+
+---@param options? { buffer?: integer, sync?: boolean, force?: boolean, callback?: fun(result: table) }
+---@return table
+function M.reload_nbt(options)
+	return require("minecraft-dev.nbt").reload_buffer(options)
+end
+
 function M.reload()
 	local cur_config = vim.deepcopy(M.config)
 	local notify = require("minecraft-dev.util.notify")

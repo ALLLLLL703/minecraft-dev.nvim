@@ -15,6 +15,9 @@ function M.setup()
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoFabricEntrypoint")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoFabricResource")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoMixinReference")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevEditNbt")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevSaveNbt")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevReloadNbt")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
@@ -110,6 +113,27 @@ function M.setup()
 			notify.notify(vim.log.levels.ERROR, { "metadata", err.code }, tostring(err.detail or ""))
 		end
 	end, { nargs = "?" })
+	vim.api.nvim_create_user_command("MinecraftDevEditNbt", function(opts)
+		local path = opts.args ~= "" and opts.args or vim.api.nvim_buf_get_name(0)
+		local result = require("minecraft-dev").open_nbt({ path = path })
+		if result.status == "failed" then
+			notify.notify(vim.log.levels.ERROR, { "nbt", result.error.code }, tostring(result.error.detail or ""))
+		end
+	end, { nargs = "?", complete = "file" })
+	vim.api.nvim_create_user_command("MinecraftDevSaveNbt", function()
+		local result = require("minecraft-dev").save_nbt()
+		if result.status == "saved" then
+			notify.notify(vim.log.levels.INFO, { "nbt", "saved" }, result.path)
+		else
+			notify.notify(vim.log.levels.ERROR, { "nbt", result.error.code }, tostring(result.error.detail or ""))
+		end
+	end, {})
+	vim.api.nvim_create_user_command("MinecraftDevReloadNbt", function(opts)
+		local result = require("minecraft-dev").reload_nbt({ force = opts.bang })
+		if result.status == "failed" then
+			notify.notify(vim.log.levels.ERROR, { "nbt", result.error.code }, tostring(result.error.detail or ""))
+		end
+	end, { bang = true })
 end
 
 function M.dispatch(args)

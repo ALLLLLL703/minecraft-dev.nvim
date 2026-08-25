@@ -87,8 +87,8 @@
 - [ ] `mods.toml` / `neoforge.mods.toml` 结构、版本范围和 mod id 诊断
 - [x] `fabric.mod.json` entrypoint、mixin config、资源路径和依赖诊断
 - [x] Mixin JSON config package、class、required fields 和 compatibilityLevel 诊断
-- [ ] 为确定字段提供补全、hover 或跳转入口
-- [ ] 每种文件均添加 fixture、错误路径和 Neovim MCP 场景
+- [x] 为确定字段提供补全、hover 或跳转入口
+- [x] 每种文件均添加 fixture、错误路径和 Neovim MCP 场景
 
 ### P3.1：Bukkit / Paper 主类引用（已完成）
 
@@ -145,12 +145,22 @@
 
 ## 阶段 4：NBT 与资源编辑
 
-- [ ] 确定维护型 NBT 依赖或记录自实现边界
-- [ ] 读取 gzip、zlib 和未压缩二进制 NBT
-- [ ] 提供可编辑文本表示和结构校验
-- [ ] 原子、安全地写回原压缩格式
-- [ ] 覆盖未知 tag、损坏输入、深度/大小限制和取消路径
-- [ ] Neovim MCP 打开、编辑、保存和重载验证
+### P4.1：NBT 二进制编辑闭环
+
+- [x] 用 GitHub MCP 核对 MinecraftDev 的 NBT 读取、文本视图与保存边界
+- [x] 盘点可维护依赖，并记录采用或拒绝理由
+- [x] 先写 gzip、zlib、未压缩与损坏输入的回归场景
+- [x] 实现受深度/大小限制保护的 NBT 解析、文本表示与编码
+- [x] 实现保留原压缩格式的原子写回与取消保护
+- [x] 暴露配置、命令、API 与帮助文档
+- [x] 通过连接中的 Neovim MCP 完成打开、编辑、保存、重载验证
+
+- [x] 确定维护型 NBT 依赖或记录自实现边界
+- [x] 读取 gzip、zlib 和未压缩二进制 NBT
+- [x] 提供可编辑文本表示和结构校验
+- [x] 原子、安全地写回原压缩格式
+- [x] 覆盖未知 tag、损坏输入、深度/大小限制和取消路径
+- [x] Neovim MCP 打开、编辑、保存和重载验证
 
 ## 阶段 5：Mixin、Mappings 与源码动作
 

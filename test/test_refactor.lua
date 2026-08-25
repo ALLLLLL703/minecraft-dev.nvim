@@ -4005,6 +4005,114 @@ function _G.MinecraftDevTestMixinConfigMetadata()
 	vim.fn.delete(root, "rf")
 end
 
+function _G.MinecraftDevTestNbtEditing()
+	local nbt = require("minecraft-dev.nbt")
+	assert_equal(vim.fn.exists(":MinecraftDevEditNbt"), 2, "NBT edit command should be registered")
+	assert_equal(vim.fn.exists(":MinecraftDevSaveNbt"), 2, "NBT save command should be registered")
+	assert_equal(vim.fn.exists(":MinecraftDevReloadNbt"), 2, "NBT reload command should be registered")
+	local document = vim.json.encode({
+		type = "compound",
+		name = "Level",
+		value = {
+			{ type = "byte", name = "byte", value = -7 },
+			{ type = "short", name = "short", value = 32000 },
+			{ type = "int", name = "int", value = 123456 },
+			{ type = "long", name = "long", value = "9223372036854775807" },
+			{ type = "float", name = "float", value = 1.5 },
+			{ type = "double", name = "double", value = -2.25 },
+			{ type = "string", name = "string", value = "hello\0😀" },
+			{ type = "byte_array", name = "bytes", value = { -1, 0, 127 } },
+			{ type = "int_array", name = "ints", value = { -1, 0, 2147483647 } },
+			{ type = "long_array", name = "longs", value = { "-1", "9223372036854775807" } },
+			{
+				type = "list",
+				name = "list",
+				element_type = "compound",
+				value = { { type = "compound", value = { { type = "string", name = "id", value = "minecraft:stone" } } } },
+			},
+		},
+	})
+
+	for _, compression in ipairs({ "none", "gzip", "zlib" }) do
+		local encoded = nbt.encode_text(document, { compression = compression })
+		assert_equal(encoded.status, "encoded", compression .. " NBT should encode")
+		local decoded = nbt.decode_bytes(encoded.bytes)
+		assert_equal(decoded.status, "decoded", compression .. " NBT should decode")
+		assert_equal(decoded.compression, compression, compression .. " should be detected")
+		local root = vim.json.decode(decoded.text)
+		assert_equal(root.name, "Level", "root name should survive NBT round trip")
+		assert_equal(root.value[4].value, "9223372036854775807", "64-bit longs should stay lossless")
+		assert_equal(root.value[7].value, "hello\0😀", "modified UTF-8 strings should stay lossless")
+	end
+
+	assert_equal(nbt.decode_bytes(string.char(99, 0, 0)).error.code, "unknown_tag", "unknown tags should fail structurally")
+	assert_equal(nbt.decode_bytes(string.char(10, 0)).error.code, "malformed", "truncated NBT should fail structurally")
+	assert_equal(nbt.decode_bytes(string.rep("x", 9), { max_input_bytes = 8 }).error.code, "size_limit", "input size limits should be enforced before decoding")
+	local too_deep = { type = "compound", name = "", value = {} }
+	local cursor = too_deep
+	for index = 1, 4 do
+		local child = { type = "compound", name = tostring(index), value = {} }
+		table.insert(cursor.value, child)
+		cursor = child
+	end
+	assert_equal(nbt.encode_text(vim.json.encode(too_deep), { max_depth = 3 }).error.code, "depth_limit", "NBT depth limits should be enforced")
+	assert_equal(nbt.encode_text(document, { max_tags = 1 }).error.code, "tag_limit", "NBT tag count limits should be enforced")
+	assert_equal(nbt.encode_text(document, { max_array_length = 1 }).error.code, "array_limit", "NBT array limits should be enforced")
+	assert_equal(nbt.encode_text(document, { max_string_bytes = 2 }).error.code, "string_limit", "NBT string limits should be enforced")
+
+	local root = vim.fn.tempname()
+	vim.fn.mkdir(root, "p")
+	local path = root .. "/level.dat"
+	local initial = nbt.encode_text(document, { compression = "zlib" })
+	local uv = vim.uv or vim.loop
+	local fd = assert(uv.fs_open(path, "w", 384))
+	assert_equal(uv.fs_write(fd, initial.bytes, 0), #initial.bytes, "NBT fixture should be written as binary")
+	uv.fs_close(fd)
+	local opened = nbt.open({ path = path, sync = true })
+	assert_equal(opened.status, "opened", "NBT should open into an editable buffer")
+	assert_equal(vim.bo[opened.buffer].buftype, "acwrite", "NBT text view should use an acwrite buffer")
+	assert_equal(nbt.open({ path = path, sync = true }).buffer, opened.buffer, "opening an active NBT view should reuse it")
+	local edited = vim.json.decode(table.concat(vim.api.nvim_buf_get_lines(opened.buffer, 0, -1, false), "\n"))
+	edited.value[7].value = "changed"
+	vim.api.nvim_buf_set_lines(opened.buffer, 0, -1, false, vim.split(vim.json.encode(edited), "\n", { plain = true }))
+	assert_equal(nbt.reload_buffer({ buffer = opened.buffer, sync = true }).error.code, "modified_buffer", "reload should protect unsaved NBT edits")
+	vim.api.nvim_buf_set_lines(opened.buffer, 0, -1, false, { "{" })
+	assert_equal(nbt.save_buffer({ buffer = opened.buffer }).error.code, "invalid_text", "invalid NBT text should not save")
+	vim.api.nvim_buf_set_lines(opened.buffer, 0, -1, false, vim.split(vim.json.encode(edited), "\n", { plain = true }))
+	local saved = nbt.save_buffer({ buffer = opened.buffer })
+	assert_equal(saved.status, "saved", "edited NBT should save")
+	local reloaded = nbt.reload_buffer({ buffer = opened.buffer, sync = true })
+	assert_equal(reloaded.status, "reloaded", "NBT text view should reload")
+	assert_equal(vim.json.decode(table.concat(vim.api.nvim_buf_get_lines(opened.buffer, 0, -1, false), "\n")).value[7].value, "changed", "saved NBT should reload edited values")
+	local stat = assert(uv.fs_stat(path))
+	fd = assert(uv.fs_open(path, "r", 384))
+	local saved_bytes = assert(uv.fs_read(fd, stat.size, 0))
+	uv.fs_close(fd)
+	assert_equal(nbt.decode_bytes(saved_bytes).compression, "zlib", "save should preserve compression")
+	assert_equal(bit.band(assert(uv.fs_stat(path)).mode, 511), 384, "atomic save should preserve file permissions")
+	assert_equal(#vim.fn.glob(path .. ".minecraft-dev.*.tmp", false, true), 0, "atomic save should not leave temporary files")
+	vim.api.nvim_buf_delete(opened.buffer, { force = true })
+	vim.fn.delete(root, "rf")
+
+	local cancelled = false
+	local helper = vim.fn.tempname()
+	vim.fn.writefile({ "exec sleep 10" }, helper)
+	local pending = nbt.decode_async("", { python = "/bin/sh", helper_path = helper }, function(result)
+		cancelled = result.status == "cancelled"
+	end)
+	assert_equal(pending.status, "pending", "asynchronous NBT decode should return a cancellable handle")
+	pending.cancel()
+	vim.wait(1000, function() return cancelled end)
+	assert_truthy(cancelled, "cancelled NBT decoding should report cancellation")
+	local timed_out = false
+	nbt.decode_async("", { python = "/bin/sh", helper_path = helper, timeout_ms = 10 }, function(result)
+		timed_out = result.status == "failed" and result.error.code == "timeout"
+	end)
+	vim.wait(1000, function() return timed_out end)
+	assert_truthy(timed_out, "timed-out NBT decoding should report timeout")
+	vim.fn.delete(helper)
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -4075,6 +4183,8 @@ local function run()
 	_G.MinecraftDevTestFabricManifestMetadata = nil
 	_G.MinecraftDevTestMixinConfigMetadata()
 	_G.MinecraftDevTestMixinConfigMetadata = nil
+	_G.MinecraftDevTestNbtEditing()
+	_G.MinecraftDevTestNbtEditing = nil
 	print("test_refactor.lua: ok")
 end
 

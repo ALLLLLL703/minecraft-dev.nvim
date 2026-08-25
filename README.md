@@ -28,6 +28,7 @@ Now can using to generate
 ## Requirements
 
 - Neovim 0.12+
+- Python 3.10+ for dependency-free binary NBT editing (standard library only)
 - YAML, Java, and Kotlin Tree-sitter parsers for metadata and source translation diagnostics (optional):
   `require("nvim-treesitter").install({ "yaml", "java", "kotlin" })`
 - Picker support
@@ -70,6 +71,16 @@ require("minecraft-dev").setup({
 			diagnostics = true,
 			source_scan_max_files = 1000,
 		},
+		nbt = {
+			python = "python3",
+			timeout_ms = 10000,
+			max_input_bytes = 32 * 1024 * 1024,
+			max_output_bytes = 64 * 1024 * 1024,
+			max_depth = 128,
+			max_tags = 250000,
+			max_array_length = 1000000,
+			max_string_bytes = 1024 * 1024,
+		},
 		paper = {
 			version = "1.21",
 			language = "java",
@@ -107,6 +118,9 @@ MinecraftDevGotoForgeLogo
 MinecraftDevGotoFabricEntrypoint [class_or_member]
 MinecraftDevGotoFabricResource
 MinecraftDevGotoMixinReference [class]
+MinecraftDevEditNbt [path]
+MinecraftDevSaveNbt
+MinecraftDevReloadNbt[!]
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -182,6 +196,19 @@ compatibility levels, duplicate class entries, local Java/Kotlin `@Mixin` classe
 plugin classes. Lua callers can use `diagnose_mixin_config()`, `complete_mixin_config()`, and
 `goto_mixin_reference()`. JSON5 is supported when a `json5` Tree-sitter parser is installed; a missing parser is
 reported structurally without falling back to lossy text matching.
+
+`:MinecraftDevEditNbt` opens gzip, zlib, or uncompressed binary NBT as an editable typed JSON buffer. Every node keeps
+its exact NBT `type`; signed 64-bit `long` values use decimal strings, lists declare `element_type`, and compounds use
+an ordered array of named children. `:write` or `:MinecraftDevSaveNbt` validates the complete structure and atomically
+replaces the backing file while preserving its compression and permissions. `:MinecraftDevReloadNbt` refuses to
+discard unsaved edits; use `:MinecraftDevReloadNbt!` to force it. Lua callers can use `open_nbt()`, `save_nbt()`, and
+`reload_nbt()`; asynchronous opens return a cancellable operation. Input, expanded output, depth, tag count, array,
+string, and timeout limits are configurable under `defaults.nbt`.
+
+NBT uses the repository's small Python standard-library codec instead of an optional Lua compression module or an
+external NBT package. This keeps gzip/zlib and IEEE numeric handling consistent without adding a package-manager
+dependency. Missing Python, malformed input, unknown tags, limit violations, timeouts, and cancellation are reported
+as structured failures; the original file is never replaced after validation or encoding failure.
 
 When generating a Fabric project, the plugin now asks for:
 

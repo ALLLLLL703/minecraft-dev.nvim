@@ -36,6 +36,16 @@ M.default_config = {
 			diagnostics = true,
 			source_scan_max_files = 1000,
 		},
+		nbt = {
+			python = "python3",
+			timeout_ms = 10000,
+			max_input_bytes = 32 * 1024 * 1024,
+			max_output_bytes = 64 * 1024 * 1024,
+			max_depth = 128,
+			max_tags = 250000,
+			max_array_length = 1000000,
+			max_string_bytes = 1024 * 1024,
+		},
 		paper = {
 			version = "1.21",
 			language = "java",
@@ -254,6 +264,37 @@ M.default_config = {
 			mixin_reference_required = "Place the cursor on a Mixin class/plugin reference or provide one.",
 			mixin_reference_unresolved = "Mixin class/plugin reference was not found: %s",
 		},
+		nbt = {
+			opened = "Opened NBT text view: %s",
+			saved = "Saved NBT file: %s",
+			reloaded = "Reloaded NBT file: %s",
+			path_required = "Provide an NBT file path or open an NBT file first.",
+			file_unavailable = "NBT file is unavailable: %s",
+			read_failed = "Failed to read NBT file: %s",
+			write_failed = "Failed to atomically write NBT file: %s",
+			python_unavailable = "Python executable for NBT support is unavailable: %s",
+			helper_unavailable = "NBT codec helper is unavailable: %s",
+			codec_failed = "NBT codec failed: %s",
+			timeout = "NBT operation timed out: %s",
+			cancelled = "NBT operation was cancelled.",
+			invalid_input = "NBT input must be binary data.",
+			invalid_text = "Invalid editable NBT text: %s",
+			invalid_compression = "Unsupported NBT compression: %s",
+			invalid_root = "NBT root tag must be a compound: %s",
+			unknown_tag = "Unknown NBT tag: %s",
+			malformed = "Malformed NBT input: %s",
+			size_limit = "NBT size limit exceeded: %s",
+			depth_limit = "NBT depth limit exceeded: %s",
+			tag_limit = "NBT tag count limit exceeded: %s",
+			array_limit = "NBT array/list limit exceeded: %s",
+			string_limit = "NBT string limit exceeded: %s",
+			value_range = "NBT numeric value is out of range: %s",
+			list_type = "NBT list items have inconsistent types: %s",
+			duplicate_name = "NBT compound contains a duplicate name: %s",
+			not_nbt_buffer = "Current buffer is not an editable NBT text view.",
+			modified_buffer = "NBT text view has unsaved changes; use force reload to discard them.",
+			callback_required = "Asynchronous NBT operation requires a callback.",
+		},
 		reload = {
 			success = "Successfully reloaded minecraft-dev!",
 			module_reloaded = "%s reloaded",
@@ -361,6 +402,30 @@ function M.normalize(opts)
 	then
 		---@diagnostic disable-next-line: undefined-field
 		metadata.source_scan_max_files = M.default_config.defaults.metadata.source_scan_max_files
+	end
+	if type(normalized.defaults.nbt) ~= "table" then
+		---@diagnostic disable-next-line: inject-field, undefined-field
+		normalized.defaults.nbt = vim.deepcopy(M.default_config.defaults.nbt)
+	end
+	---@diagnostic disable-next-line: undefined-field
+	local nbt = normalized.defaults.nbt
+	if type(nbt.python) ~= "string" or vim.trim(nbt.python) == "" then
+		---@diagnostic disable-next-line: undefined-field
+		nbt.python = M.default_config.defaults.nbt.python
+	end
+	for _, key in ipairs({
+		"timeout_ms",
+		"max_input_bytes",
+		"max_output_bytes",
+		"max_depth",
+		"max_tags",
+		"max_array_length",
+		"max_string_bytes",
+	}) do
+		if type(nbt[key]) ~= "number" or nbt[key] < 1 or nbt[key] % 1 ~= 0 then
+			---@diagnostic disable-next-line: undefined-field
+			nbt[key] = M.default_config.defaults.nbt[key]
+		end
 	end
 	return normalized
 end
