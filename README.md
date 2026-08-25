@@ -71,6 +71,9 @@ require("minecraft-dev").setup({
 			diagnostics = true,
 			source_scan_max_files = 1000,
 		},
+		mappings = {
+			paths = { "/absolute/path/to/joined.tsrg" }, -- optional; .srg, .tsrg, and Tiny v2
+		},
 		nbt = {
 			python = "python3",
 			timeout_ms = 10000,
@@ -121,6 +124,12 @@ MinecraftDevGotoMixinReference [class]
 MinecraftDevEditNbt [path]
 MinecraftDevSaveNbt
 MinecraftDevReloadNbt[!]
+MinecraftDevLookupMapping name
+MinecraftDevGotoAccessTarget
+MinecraftDevCopyAt [member]
+MinecraftDevCopyAw [member]
+MinecraftDevCopyCoremodTarget [member]
+MinecraftDevCopyMixinTarget [member]
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -196,6 +205,21 @@ compatibility levels, duplicate class entries, local Java/Kotlin `@Mixin` classe
 plugin classes. Lua callers can use `diagnose_mixin_config()`, `complete_mixin_config()`, and
 `goto_mixin_reference()`. JSON5 is supported when a `json5` Tree-sitter parser is installed; a missing parser is
 reported structurally without falling back to lossy text matching.
+
+Configured `defaults.mappings.paths` are parsed locally as standard SRG, TSRG/TSRG2, or Tiny v2 mappings.
+`:MinecraftDevLookupMapping` searches class and member names in both directions; the Lua API also accepts in-memory
+`content` and an explicit `format`, so integrations do not need to write a temporary mapping file. Mapping files are
+not searched inside Gradle caches automatically: explicit paths keep indexing bounded and avoid coupling this plugin
+to IntelliJ's facet/project model.
+
+Access Transformer (`accesstransformer.cfg` and `*_at.cfg`), Access Widener (`*.accesswidener`), and recognized
+coremod target files (`coremods.js` and `*.coremod.js`) diagnose invalid headers/rules, incompatible AW access/kind
+pairs, malformed coremod targets, and duplicate targets. `:MinecraftDevGotoAccessTarget` resolves classes, fields, and
+methods to local Java/Kotlin source using Tree-sitter-derived JVM descriptors. From a Java/Kotlin class or member,
+`:MinecraftDevCopyAt`, `:MinecraftDevCopyAw`, `:MinecraftDevCopyCoremodTarget`, and
+`:MinecraftDevCopyMixinTarget` produce the same target shapes as MinecraftDev. If a source type cannot be resolved
+deterministically, copying fails instead of guessing a descriptor. Lua integrations can use `lookup_mapping()`,
+`diagnose_access_rules()`, `goto_access_target()`, and `copy_jvm_target()`.
 
 `:MinecraftDevEditNbt` opens gzip, zlib, or uncompressed binary NBT as an editable typed JSON buffer. Every node keeps
 its exact NBT `type`; signed 64-bit `long` values use decimal strings, lists declare `element_type`, and compounds use

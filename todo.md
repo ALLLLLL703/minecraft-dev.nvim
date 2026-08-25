@@ -164,9 +164,19 @@
 
 ## 阶段 5：Mixin、Mappings 与源码动作
 
-- [ ] 盘点可由 JDTLS/Kotlin LSP/Tree-sitter 提供的语义，避免重复实现
-- [ ] 实现 mapping lookup 与 SRG 名称查询
-- [ ] 实现 AT/AW/coremod target 复制、跳转和重复项诊断
+### P5.1：Mappings 与访问规则导航
+
+- [x] 用 GitHub MCP 核对上游 mapping、AT、AW、coremod 与 Mixin 源码动作入口
+- [x] 写出 Neovim/LSP/Tree-sitter 可复用边界和 IntelliJ PSI 差异
+- [x] 先写 mapping/SRG 查询与无索引失败场景
+- [x] 实现 AT/AW/coremod target 解析、复制、跳转和重复项诊断
+- [ ] 实现 Mixin target 查找、引用复制与安全生成动作
+- [ ] 暴露配置、命令、API、补全和帮助文档
+- [ ] 通过连接中的 Neovim MCP 场景、全量回归与 JVM LSP 零客户端检查
+
+- [x] 盘点可由 JDTLS/Kotlin LSP/Tree-sitter 提供的语义，避免重复实现
+- [x] 实现 mapping lookup 与 SRG 名称查询
+- [x] 实现 AT/AW/coremod target 复制、跳转和重复项诊断
 - [ ] 实现 Mixin target 查找与引用复制
 - [ ] 实现 accessor、overwrite、shadow、soft-implements 的安全生成动作
 - [ ] 实现可迁移的 event listener 与 Minecraft class 生成

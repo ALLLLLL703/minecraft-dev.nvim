@@ -36,6 +36,9 @@ M.default_config = {
 			diagnostics = true,
 			source_scan_max_files = 1000,
 		},
+		mappings = {
+			paths = {},
+		},
 		nbt = {
 			python = "python3",
 			timeout_ms = 10000,
@@ -72,6 +75,9 @@ M.default_config = {
 		},
 	},
 	prompts = {
+		mappings = {
+			select_mapping = "Select Minecraft mapping",
+		},
 		translations = {
 			select_translation = "Select Minecraft translation",
 			usages_title = "Minecraft translation usages",
@@ -126,6 +132,33 @@ M.default_config = {
 		},
 	},
 	messages = {
+		mappings = {
+			mapping_unavailable = "No configured mapping file is available: %s",
+			mapping_query_required = "Provide a mapping name to look up.",
+			mapping_format_invalid = "Unsupported mapping format: %s",
+			mapping_syntax_invalid = "Invalid mapping syntax: %s",
+			mapping_header_invalid = "Invalid mapping header: %s",
+			mapping_not_found = "No mapping was found for: %s",
+			mapping_found = "%s -> %s",
+		},
+		access_rules = {
+			access_modifier_invalid = "Invalid Access Transformer modifier: %s",
+			access_rule_syntax_invalid = "Invalid access rule syntax: %s",
+			access_rule_duplicate = "Duplicate access target: %s",
+			access_kind_invalid = "Invalid Access Widener access/kind pair: %s",
+			access_header_invalid = "Invalid Access Widener header: %s",
+			coremod_target_invalid = "Invalid coremod target: %s",
+			coremod_target_missing = "No coremod target object was found: %s",
+			not_access_rule_file = "Current buffer is not an AT, AW, or coremod target file: %s",
+			access_target_required = "Place the cursor on an access/coremod target entry: %s",
+			access_target_unresolved = "Access/coremod target was not found in local source: %s",
+			jvm_source_required = "Current buffer is not Java or Kotlin source: %s",
+			descriptor_unresolved = "Could not derive a safe JVM descriptor for: %s",
+			member_unresolved = "JVM member was not found: %s",
+			class_unresolved = "JVM class was not found: %s",
+			target_format_invalid = "Unsupported target format: %s",
+			target_copied = "Copied Minecraft target: %s",
+		},
 		project = {
 			generated = "Generated Minecraft project at %s",
 		},
@@ -406,6 +439,24 @@ function M.normalize(opts)
 	if type(normalized.defaults.nbt) ~= "table" then
 		---@diagnostic disable-next-line: inject-field, undefined-field
 		normalized.defaults.nbt = vim.deepcopy(M.default_config.defaults.nbt)
+	end
+	if type(normalized.defaults.mappings) ~= "table" then
+		---@diagnostic disable-next-line: inject-field, undefined-field
+		normalized.defaults.mappings = vim.deepcopy(M.default_config.defaults.mappings)
+	end
+	---@diagnostic disable-next-line: undefined-field
+	local mapping_paths = normalized.defaults.mappings.paths
+	if type(mapping_paths) ~= "table" or not vim.islist(mapping_paths) then
+		---@diagnostic disable-next-line: undefined-field
+		normalized.defaults.mappings.paths = {}
+	else
+		for _, path in ipairs(mapping_paths) do
+			if type(path) ~= "string" or vim.trim(path) == "" then
+				---@diagnostic disable-next-line: undefined-field
+				normalized.defaults.mappings.paths = {}
+				break
+			end
+		end
 	end
 	---@diagnostic disable-next-line: undefined-field
 	local nbt = normalized.defaults.nbt

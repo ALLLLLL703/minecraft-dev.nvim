@@ -13,6 +13,7 @@ function M.setup(opts)
 	require("minecraft-dev.forge_metadata").setup()
 	require("minecraft-dev.fabric_metadata").setup()
 	require("minecraft-dev.mixin_metadata").setup()
+	require("minecraft-dev.access_rules").setup()
 end
 
 ---@param spec table
@@ -192,6 +193,30 @@ end
 ---@return table
 function M.reload_nbt(options)
 	return require("minecraft-dev.nbt").reload_buffer(options)
+end
+
+---@param options { query?: string, content?: string, path?: string, paths?: string[], format?: string }
+---@return table
+function M.lookup_mapping(options)
+	return require("minecraft-dev.mappings").lookup(options)
+end
+
+---@param options? { buffer?: integer, format?: "at"|"aw"|"coremod" }
+---@return table
+function M.diagnose_access_rules(options)
+	return require("minecraft-dev.access_rules").diagnose_buffer(options)
+end
+
+---@param options? { buffer?: integer, format?: "at"|"aw"|"coremod", row?: integer, root?: string, open?: boolean, max_files?: integer }
+---@return table
+function M.goto_access_target(options)
+	return require("minecraft-dev.access_rules").goto_target(options)
+end
+
+---@param options { buffer?: integer, member?: string, row?: integer, format: "at"|"aw"|"coremod"|"mixin", access?: string, clipboard?: boolean }
+---@return table
+function M.copy_jvm_target(options)
+	return require("minecraft-dev.jvm_targets").copy(options)
 end
 
 function M.reload()

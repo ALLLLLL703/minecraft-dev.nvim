@@ -4113,6 +4113,116 @@ function _G.MinecraftDevTestNbtEditing()
 	vim.fn.delete(helper)
 end
 
+function _G.MinecraftDevTestMappingsAndAccessRules()
+	local mappings = require("minecraft-dev.mappings")
+	for _, command in ipairs({
+		"MinecraftDevLookupMapping",
+		"MinecraftDevGotoAccessTarget",
+		"MinecraftDevCopyAt",
+		"MinecraftDevCopyAw",
+		"MinecraftDevCopyCoremodTarget",
+		"MinecraftDevCopyMixinTarget",
+	}) do
+		assert_equal(vim.fn.exists(":" .. command), 2, command .. " should be registered")
+	end
+	local standard = table.concat({
+		"CL: test/Example a/b",
+		"FD: test/Example/count a/b/f_1_",
+		"MD: test/Example/run (I)Ljava/lang/String; a/b/m_1_ (I)Ljava/lang/String;",
+	}, "\n")
+	local inspected = mappings.inspect({ content = standard, format = "srg" })
+	assert_equal(inspected.status, "indexed", "standard SRG should parse")
+	assert_equal(#inspected.entries, 3, "standard SRG should index class, field, and method")
+	assert_equal(mappings.lookup({ content = standard, format = "srg", query = "run" }).matches[1].target_name, "m_1_", "named method should map to SRG")
+	assert_equal(mappings.lookup({ content = standard, format = "srg", query = "m_1_" }).matches[1].source_name, "run", "SRG lookup should be bidirectional")
+	local tsrg = table.concat({
+		"test/Example a/b",
+		"\tcount f_1_",
+		"\trun (I)Ljava/lang/String; m_1_",
+	}, "\n")
+	assert_equal(#mappings.inspect({ content = tsrg, format = "tsrg" }).entries, 3, "TSRG should index class and members")
+	assert_equal(mappings.lookup({ query = "missing", paths = {} }).error.code, "mapping_unavailable", "lookup without mapping files should fail structurally")
+
+	local root = vim.fn.tempname()
+	local java_dir = root .. "/src/main/java/test"
+	local resources = root .. "/src/main/resources/META-INF"
+	vim.fn.mkdir(root .. "/.git", "p")
+	vim.fn.mkdir(java_dir, "p")
+	vim.fn.mkdir(resources, "p")
+	local java_path = java_dir .. "/Example.java"
+	vim.fn.writefile({
+		"package test;",
+		"public class Example {",
+		"  private int count;",
+		"  public String run(int value) { return String.valueOf(value); }",
+		"}",
+	}, java_path)
+	local java_buffer = vim.fn.bufadd(java_path)
+	vim.fn.bufload(java_buffer)
+	vim.bo[java_buffer].filetype = "java"
+
+	local targets = require("minecraft-dev.jvm_targets")
+	assert_equal(targets.copy({ buffer = java_buffer, member = "run", format = "at", clipboard = false }).text, "test.Example run(I)Ljava/lang/String;", "AT target should use dotted owner and JVM descriptor")
+	assert_equal(targets.copy({ buffer = java_buffer, member = "run", format = "aw", clipboard = false }).text, "accessible method test/Example run (I)Ljava/lang/String;", "AW target should use internal owner and JVM descriptor")
+	local coremod = vim.json.decode(targets.copy({ buffer = java_buffer, member = "run", format = "coremod", clipboard = false }).text)
+	assert_equal(coremod.target, "METHOD", "coremod method target should be structured")
+	assert_equal(coremod.methodDesc, "(I)Ljava/lang/String;", "coremod target should preserve method descriptor")
+	assert_equal(targets.copy({ buffer = java_buffer, member = "run", format = "mixin", clipboard = false }).text, "Ltest/Example;run(I)Ljava/lang/String;", "Mixin target should use canonical owner syntax")
+
+	local rules = require("minecraft-dev.access_rules")
+	local at_path = resources .. "/accesstransformer.cfg"
+	vim.fn.writefile({
+		"public test.Example count",
+		"public test.Example count",
+		"public-f test.Example run(I)Ljava/lang/String;",
+		"invalid test.Example",
+	}, at_path)
+	local at_buffer = vim.fn.bufadd(at_path)
+	vim.fn.bufload(at_buffer)
+	local diagnosed_at = rules.diagnose_buffer({ buffer = at_buffer, format = "at" })
+	local at_codes = {}
+	for _, item in ipairs(diagnosed_at.diagnostics) do at_codes[item.code] = true end
+	assert_truthy(at_codes.access_rule_duplicate, "duplicate AT entries should diagnose")
+	assert_truthy(at_codes.access_modifier_invalid, "invalid AT modifiers should diagnose")
+	assert_equal(rules.goto_target({ buffer = at_buffer, format = "at", row = 2, open = false }).member.name, "run", "AT method target should navigate to source")
+
+	local aw_path = resources .. "/demo.accesswidener"
+	vim.fn.writefile({
+		"accessWidener v2 named",
+		"accessible field test/Example count I",
+		"accessible field test/Example count I",
+		"mutable method test/Example run (I)Ljava/lang/String;",
+	}, aw_path)
+	local aw_buffer = vim.fn.bufadd(aw_path)
+	vim.fn.bufload(aw_buffer)
+	local diagnosed_aw = rules.diagnose_buffer({ buffer = aw_buffer, format = "aw" })
+	local aw_codes = {}
+	for _, item in ipairs(diagnosed_aw.diagnostics) do aw_codes[item.code] = true end
+	assert_truthy(aw_codes.access_rule_duplicate, "duplicate AW entries should diagnose")
+	assert_truthy(aw_codes.access_kind_invalid, "invalid AW access/kind combinations should diagnose")
+	assert_equal(rules.goto_target({ buffer = aw_buffer, format = "aw", row = 1, open = false }).member.name, "count", "AW field target should navigate to source")
+
+	local coremod_path = resources .. "/coremods.js"
+	vim.fn.writefile({
+		"const first = { target: { target: 'METHOD', class: 'test.Example', methodName: 'run', methodDesc: '(I)Ljava/lang/String;' } };",
+		"const second = { target: { target: 'METHOD', class: 'test.Example', methodName: 'run', methodDesc: '(I)Ljava/lang/String;' } };",
+	}, coremod_path)
+	local coremod_buffer = vim.fn.bufadd(coremod_path)
+	vim.fn.bufload(coremod_buffer)
+	local diagnosed_coremod = rules.diagnose_buffer({ buffer = coremod_buffer, format = "coremod" })
+	assert_equal(diagnosed_coremod.diagnostics[1].code, "access_rule_duplicate", "duplicate coremod targets should diagnose")
+	assert_equal(rules.goto_target({ buffer = coremod_buffer, format = "coremod", row = 0, open = false }).member.name, "run", "coremod method target should navigate to source")
+
+	vim.api.nvim_buf_delete(at_buffer, { force = true })
+	vim.api.nvim_buf_delete(aw_buffer, { force = true })
+	vim.api.nvim_buf_delete(coremod_buffer, { force = true })
+	-- The distribution Java ftplugin cleanup references an optional SpotBugs augroup.
+	vim.api.nvim_create_augroup("java_spotbugs", { clear = false })
+	vim.api.nvim_create_augroup("java_spotbugs_post", { clear = false })
+	vim.api.nvim_buf_delete(java_buffer, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -4185,6 +4295,8 @@ local function run()
 	_G.MinecraftDevTestMixinConfigMetadata = nil
 	_G.MinecraftDevTestNbtEditing()
 	_G.MinecraftDevTestNbtEditing = nil
+	_G.MinecraftDevTestMappingsAndAccessRules()
+	_G.MinecraftDevTestMappingsAndAccessRules = nil
 	print("test_refactor.lua: ok")
 end
 

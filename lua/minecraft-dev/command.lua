@@ -3,6 +3,19 @@ local command_args = require("minecraft-dev.command_args")
 local notify = require("minecraft-dev.util.notify")
 local platforms = require("minecraft-dev.platforms")
 
+local function copy_target(format, member)
+	local result = require("minecraft-dev").copy_jvm_target({
+		format = format,
+		member = member ~= "" and member or nil,
+		row = vim.api.nvim_win_get_cursor(0)[1] - 1,
+	})
+	if result.status == "copied" then
+		notify.notify(vim.log.levels.INFO, { "access_rules", "target_copied" }, result.text)
+	else
+		notify.notify(vim.log.levels.ERROR, { "access_rules", result.error.code }, tostring(result.error.detail or ""))
+	end
+end
+
 function M.setup()
 	pcall(vim.api.nvim_del_user_command, "GmcPro")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevNew")
@@ -18,6 +31,12 @@ function M.setup()
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevEditNbt")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevSaveNbt")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevReloadNbt")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevLookupMapping")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevGotoAccessTarget")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevCopyAt")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevCopyAw")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevCopyCoremodTarget")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevCopyMixinTarget")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
@@ -134,6 +153,56 @@ function M.setup()
 			notify.notify(vim.log.levels.ERROR, { "nbt", result.error.code }, tostring(result.error.detail or ""))
 		end
 	end, { bang = true })
+	vim.api.nvim_create_user_command("MinecraftDevLookupMapping", function(opts)
+		local result = require("minecraft-dev").lookup_mapping({ query = opts.args })
+		if result.status == "failed" then
+			notify.notify(vim.log.levels.ERROR, { "mappings", result.error.code }, tostring(result.error.detail or ""))
+		elseif #result.matches == 0 then
+			notify.notify(vim.log.levels.WARN, { "mappings", "mapping_not_found" }, opts.args)
+		elseif #result.matches == 1 then
+			local item = result.matches[1]
+			notify.notify(
+				vim.log.levels.INFO,
+				{ "mappings", "mapping_found" },
+				item.source_name or item.source_owner,
+				item.target_name or item.target_owner
+			)
+		else
+			local config = require("minecraft-dev").config
+			vim.ui.select(result.matches, {
+				prompt = config.prompts.mappings.select_mapping,
+				format_item = function(item)
+					return string.format(
+						"%s -> %s",
+						item.source_name or item.source_owner,
+						item.target_name or item.target_owner
+					)
+				end,
+			}, function() end)
+		end
+	end, { nargs = 1 })
+	vim.api.nvim_create_user_command("MinecraftDevGotoAccessTarget", function()
+		local result = require("minecraft-dev").goto_access_target()
+		if result.status == "failed" then
+			notify.notify(
+				vim.log.levels.ERROR,
+				{ "access_rules", result.error.code },
+				tostring(result.error.detail or "")
+			)
+		end
+	end, {})
+	vim.api.nvim_create_user_command("MinecraftDevCopyAt", function(opts)
+		copy_target("at", opts.args)
+	end, { nargs = "?" })
+	vim.api.nvim_create_user_command("MinecraftDevCopyAw", function(opts)
+		copy_target("aw", opts.args)
+	end, { nargs = "?" })
+	vim.api.nvim_create_user_command("MinecraftDevCopyCoremodTarget", function(opts)
+		copy_target("coremod", opts.args)
+	end, { nargs = "?" })
+	vim.api.nvim_create_user_command("MinecraftDevCopyMixinTarget", function(opts)
+		copy_target("mixin", opts.args)
+	end, { nargs = "?" })
 end
 
 function M.dispatch(args)
