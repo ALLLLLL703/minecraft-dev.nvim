@@ -237,6 +237,18 @@ function M.generate_mixin_member(options)
 	return require("minecraft-dev.mixin_actions").generate(options)
 end
 
+---@param options { buffer?: integer, row?: integer, platform: "bukkit"|"bungeecord"|"forge"|"neoforge"|"velocity"|"sponge", event: string, name?: string, priority?: string, order?: string, ignore_cancelled?: boolean, forge_kind?: "fml"|"eventbus" }
+---@return table
+function M.generate_event_listener(options)
+	return require("minecraft-dev.event_generation").generate(options)
+end
+
+---@param options { root?: string, source_root?: string, platform: "forge"|"neoforge"|"fabric", kind: string, class_name: string, minecraft_version?: string, open?: boolean }
+---@return table
+function M.generate_minecraft_class(options)
+	return require("minecraft-dev.class_generation").generate(options)
+end
+
 function M.reload()
 	local cur_config = vim.deepcopy(M.config)
 	local notify = require("minecraft-dev.util.notify")

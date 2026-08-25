@@ -22,7 +22,7 @@
 | Mixin config 与源码智能 | 已实现 | config 诊断、target 跳转、查找 mixin、生成 accessor/overwrite/shadow/soft-implements |
 | MCP mappings / AT / AW / coremod | 已实现 | 查映射、复制/跳转 Access Transformer、Access Widener、coremod target |
 | NBT | 已实现 | 二进制 NBT 与文本视图互转、编辑、校验和安全写回 |
-| Event / class generation | 待实现 | event listener、Minecraft class 和平台入口生成 |
+| Event / class generation | 已实现 | 六个平台 Java/Kotlin event listener；Forge/Fabric/NeoForge Java Minecraft class 模板 |
 | Color / line markers | 待分类 | 优先复用 LSP、Tree-sitter 和 Neovim highlight；仅补 Minecraft 语义差异 |
 | Facet / IDE project model | 待分类 | 预期为 IntelliJ 专属；以文件系统、Gradle/Maven/LSP 能力替代 |
 | IDE update / error reporter | 待分类 | 预期不适用；插件管理和崩溃上报由 Neovim 生态负责 |
@@ -185,12 +185,22 @@
 - [x] 暴露命令、API、可配置消息和文档
 - [x] 通过 Neovim MCP、Lua LSP 与全量回归
 
+### P5.3：事件监听器与 Minecraft class 生成
+
+- [x] 通过 GitHub MCP 固定六个平台的 listener annotation、priority/order、cancelled 与 Listener interface 规则
+- [x] 通过 GitHub MCP 固定 Forge/Fabric/NeoForge class kind、版本分支与模板边界
+- [x] 先写 Java/Kotlin listener、重复方法、只读 buffer、非法选项与 parser 缺失场景
+- [x] 实现 Bukkit、BungeeCord、Forge、NeoForge、Velocity、Sponge listener 生成
+- [x] 实现 Forge、Fabric、NeoForge Java class 模板和 Forge 版本选择
+- [x] 暴露命令、Lua API、配置消息与 README
+- [x] 通过 Neovim MCP、Lua LSP、Stylua、全量回归与 JVM LSP 零客户端检查
+
 - [x] 盘点可由 JDTLS/Kotlin LSP/Tree-sitter 提供的语义，避免重复实现
 - [x] 实现 mapping lookup 与 SRG 名称查询
 - [x] 实现 AT/AW/coremod target 复制、跳转和重复项诊断
 - [x] 实现 Mixin target 查找与引用复制
 - [x] 实现 accessor、overwrite、shadow、soft-implements 的安全生成动作
-- [ ] 实现可迁移的 event listener 与 Minecraft class 生成
+- [x] 实现可迁移的 event listener 与 Minecraft class 生成
 - [x] 为无 LSP、符号歧义、只读 buffer 和不完整项目添加失败场景
 
 ## 阶段 6：最终审计与收尾
@@ -217,3 +227,4 @@
 - P3.3 Forge/NeoForge TOML：Tree-sitter document model、schema/type/mod id/version range/enum/dependency owner diagnostics、Java/Kotlin `@Mod` 常量索引、manifest/source/logo 跳转、字段文档补全、placeholder 与 parser failure 场景通过 Neovim MCP；目标生产 Lua 的 LSP MCP diagnostics、Stylua 与 diff 检查通过。
 - P3.4 Fabric mod JSON：Tree-sitter document model、required/schema/id/environment/dependency diagnostics、Java/Kotlin class/member entrypoint 规则、mixin/accessWidener/icon/license 引用、跳转与类型过滤补全场景通过 Neovim MCP；目标生产 Lua 的 LSP MCP diagnostics、Stylua 与 diff 检查通过。
 - P3.5 Mixin config：JSON/JSON5 scope、field/package/compatibility diagnostics、Java/Kotlin `@Mixin` 与 plugin interface 索引、relative jump 和 mixin/plugin/package/compatibility completion 场景通过 Neovim MCP；目标生产 Lua 的 LSP MCP diagnostics、Stylua 与 diff 检查通过。
+- P5.3 源码生成：Bukkit/BungeeCord/Forge/NeoForge/Velocity/Sponge Java/Kotlin listener、interface、priority/order/cancelled、单行 class、重复/只读/非法/parser 缺失失败与单步 undo 场景，以及 Forge/Fabric/NeoForge class kind、Forge 版本模板、不可覆盖和路径越界场景通过 Neovim MCP；新增生产 Lua 的 LSP MCP diagnostics 为零，JVM LSP 客户端为零。

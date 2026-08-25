@@ -42,6 +42,10 @@ M.default_config = {
 		mixin = {
 			indent = "\t",
 		},
+		source_generation = {
+			indent = "    ",
+			source_root = "src/main/java",
+		},
 		nbt = {
 			python = "python3",
 			timeout_ms = 10000,
@@ -179,6 +183,26 @@ M.default_config = {
 			mixin_member_duplicate = "Mixin member already exists: %s",
 			mixin_buffer_readonly = "Mixin target buffer is not modifiable: %s",
 			mixin_generated = "Generated Mixin member: %s",
+		},
+		source_generation = {
+			buffer_unloaded = "Source buffer is not loaded: %s",
+			parser_unavailable = "Required Tree-sitter parser is unavailable: %s",
+			jvm_source_required = "Event listener generation requires Java or Kotlin source: %s",
+			source_buffer_readonly = "Source buffer is not modifiable: %s",
+			event_class_required = "Place the cursor inside a Java or Kotlin class: %s",
+			event_class_invalid = "Invalid event class name: %s",
+			event_listener_name_invalid = "Invalid event listener method name: %s",
+			event_listener_duplicate = "Event listener method already exists: %s",
+			event_platform_invalid = "Unsupported event platform: %s",
+			event_option_invalid = "Unsupported event listener option: %s",
+			event_listener_generated = "Generated event listener: %s",
+			minecraft_class_name_invalid = "Invalid Minecraft class name: %s",
+			minecraft_class_kind_invalid = "Unsupported Minecraft class kind: %s",
+			minecraft_version_invalid = "A valid Forge Minecraft version is required: %s",
+			minecraft_source_root_invalid = "Minecraft class source root must be project-relative: %s",
+			minecraft_class_exists = "Minecraft class already exists: %s",
+			minecraft_class_write_failed = "Failed to write Minecraft class: %s",
+			minecraft_class_generated = "Generated Minecraft class: %s",
 		},
 		project = {
 			generated = "Generated Minecraft project at %s",

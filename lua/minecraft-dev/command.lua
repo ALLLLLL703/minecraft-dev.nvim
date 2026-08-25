@@ -3,6 +3,32 @@ local command_args = require("minecraft-dev.command_args")
 local notify = require("minecraft-dev.util.notify")
 local platforms = require("minecraft-dev.platforms")
 
+local function generation_error(result)
+	local err = result.error or { code = "minecraft_class_write_failed" }
+	notify.notify(vim.log.levels.ERROR, { "source_generation", err.code }, tostring(err.detail or ""))
+end
+
+local function event_options(args)
+	local values = vim.split(vim.trim(args), "%s+")
+	---@type table<string, any>
+	local options = { platform = values[1], event = values[2], name = values[3] }
+	for index = 4, #values do
+		local key, value = values[index]:match("^([%w_]+)=(.+)$")
+		if key == "ignore_cancelled" then
+			if value == "true" then
+				options[key] = true
+			elseif value == "false" then
+				options[key] = false
+			else
+				options[key] = value
+			end
+		elseif key then
+			options[key] = value
+		end
+	end
+	return options
+end
+
 local function copy_target(format, member)
 	local result = require("minecraft-dev").copy_jvm_target({
 		format = format,
@@ -39,6 +65,8 @@ function M.setup()
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevCopyMixinTarget")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevFindMixins")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGenerateMixinMember")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevGenerateEventListener")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevGenerateMinecraftClass")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
@@ -242,6 +270,55 @@ function M.setup()
 				end, { "accessor_getter", "accessor_setter", "invoker", "shadow", "overwrite", "soft_implements" })
 			end
 			return {}
+		end,
+	})
+	vim.api.nvim_create_user_command("MinecraftDevGenerateEventListener", function(opts)
+		local result = require("minecraft-dev").generate_event_listener(event_options(opts.args))
+		if result.status == "generated" then
+			vim.api.nvim_win_set_cursor(0, { result.line + 1, 0 })
+			notify.notify(vim.log.levels.INFO, { "source_generation", "event_listener_generated" }, result.name)
+		else
+			generation_error(result)
+		end
+	end, {
+		nargs = "+",
+		complete = function(lead, command_line)
+			local count = #vim.split(vim.trim(command_line), "%s+")
+			if count <= 2 then
+				return vim.tbl_filter(function(value)
+					return vim.startswith(value, lead)
+				end, { "bukkit", "bungeecord", "forge", "neoforge", "velocity", "sponge" })
+			end
+			return {}
+		end,
+	})
+	vim.api.nvim_create_user_command("MinecraftDevGenerateMinecraftClass", function(opts)
+		local args = vim.split(vim.trim(opts.args), "%s+")
+		local result = require("minecraft-dev").generate_minecraft_class({
+			platform = args[1],
+			kind = args[2],
+			class_name = args[3],
+			minecraft_version = args[4],
+		})
+		if result.status == "generated" then
+			notify.notify(vim.log.levels.INFO, { "source_generation", "minecraft_class_generated" }, result.path)
+		else
+			generation_error(result)
+		end
+	end, {
+		nargs = "+",
+		complete = function(lead, command_line)
+			local args = vim.split(vim.trim(command_line), "%s+")
+			local values = {}
+			if #args <= 2 then
+				values = { "forge", "neoforge", "fabric" }
+			elseif #args == 3 then
+				values = args[2] == "fabric" and { "block", "item", "enchantment", "status_effect" }
+					or { "block", "item", "enchantment", "mob_effect", "packet" }
+			end
+			return vim.tbl_filter(function(value)
+				return vim.startswith(value, lead)
+			end, values)
 		end,
 	})
 end

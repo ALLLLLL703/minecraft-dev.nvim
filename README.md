@@ -77,6 +77,10 @@ require("minecraft-dev").setup({
 		mixin = {
 			indent = "\t",
 		},
+		source_generation = {
+			indent = "    ",
+			source_root = "src/main/java",
+		},
 		nbt = {
 			python = "python3",
 			timeout_ms = 10000,
@@ -135,6 +139,8 @@ MinecraftDevCopyCoremodTarget [member]
 MinecraftDevCopyMixinTarget [member]
 MinecraftDevFindMixins [fully.qualified.Target]
 MinecraftDevGenerateMixinMember {accessor_getter|accessor_setter|invoker|shadow|overwrite|soft_implements} member [prefix]
+MinecraftDevGenerateEventListener {bukkit|bungeecord|forge|neoforge|velocity|sponge} event_fqn [method] [key=value ...]
+MinecraftDevGenerateMinecraftClass {forge|neoforge|fabric} {block|item|enchantment|mob_effect|status_effect|packet} class_fqn [minecraft_version]
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -242,6 +248,21 @@ undoable with a single `u`; failures leave the buffer unchanged. Accessor and in
 MinecraftDev would decompile unavailable bytecode, use explicit throwing fallbacks instead of guessed behavior.
 Fully-qualified Mixin annotations avoid silently rewriting imports. The Java-only generation boundary matches the
 upstream actions' Java PSI implementation; Kotlin `@Mixin` files remain searchable and navigable.
+
+`:MinecraftDevGenerateEventListener` writes a listener method into the Java or Kotlin class under the cursor. It
+supports Bukkit and BungeeCord priorities, Velocity and Sponge order, Bukkit cancellation, Sponge cancellation
+filters, and an explicit Forge `forge_kind=fml|eventbus`. Bukkit and BungeeCord classes gain their platform Listener
+interface when needed. Fully-qualified annotations and event types keep edits deterministic without import rewriting;
+invalid options, duplicate methods, parser failures, and read-only buffers fail before changing source. Lua callers
+can use `generate_event_listener()` and pass the same fields directly.
+
+`:MinecraftDevGenerateMinecraftClass` creates the upstream MinecraftDev Java skeletons for Forge, NeoForge, and
+Fabric. Supported kinds follow the platform: Fabric uses `status_effect` and has no packet template; Forge and
+NeoForge use `mob_effect` and support packets. Forge requires `minecraft_version` so pre-1.17, 1.17, and 1.18+
+packages/templates can be selected safely. Files are created exclusively under the project-relative
+`defaults.source_generation.source_root` and existing files are never overwritten. The upstream class action is Java
+template based, so this API intentionally does not invent Kotlin skeletons. Lua callers can use
+`generate_minecraft_class()` and set `open = false` for non-interactive generation.
 
 `:MinecraftDevEditNbt` opens gzip, zlib, or uncompressed binary NBT as an editable typed JSON buffer. Every node keeps
 its exact NBT `type`; signed 64-bit `long` values use decimal strings, lists declare `element_type`, and compounds use

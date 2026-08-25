@@ -4328,6 +4328,114 @@ function _G.MinecraftDevTestMixinSourceActions()
 	vim.fn.delete(root, "rf")
 end
 
+function _G.MinecraftDevTestSourceGeneration()
+	local minecraft_dev = require("minecraft-dev")
+	assert_equal(vim.fn.exists(":MinecraftDevGenerateEventListener"), 2, "event listener command should be registered")
+	assert_equal(vim.fn.exists(":MinecraftDevGenerateMinecraftClass"), 2, "Minecraft class command should be registered")
+	local root = vim.fn.tempname()
+	vim.fn.mkdir(root .. "/.git", "p")
+	vim.fn.mkdir(root .. "/src/main/java/test", "p")
+	vim.fn.mkdir(root .. "/src/main/kotlin/test", "p")
+
+	local java_path = root .. "/src/main/java/test/Listeners.java"
+	vim.fn.writefile({ "package test;", "public class Listeners {", "}" }, java_path)
+	local java_buffer = vim.fn.bufadd(java_path)
+	vim.fn.bufload(java_buffer)
+	vim.bo[java_buffer].filetype = "java"
+	local original_java = table.concat(vim.api.nvim_buf_get_lines(java_buffer, 0, -1, false), "\n")
+	local generated = minecraft_dev.generate_event_listener({
+		buffer = java_buffer,
+		platform = "bukkit",
+		event = "org.bukkit.event.player.PlayerJoinEvent",
+		name = "onPlayerJoin",
+		priority = "HIGH",
+		ignore_cancelled = true,
+	})
+	assert_equal(generated.status, "generated", "Bukkit Java listener should generate")
+	local java_text = table.concat(vim.api.nvim_buf_get_lines(java_buffer, 0, -1, false), "\n")
+	assert_truthy(java_text:find("implements org.bukkit.event.Listener", 1, true) ~= nil, "Bukkit listener should implement Listener")
+	assert_truthy(java_text:find("@org.bukkit.event.EventHandler(priority = org.bukkit.event.EventPriority.HIGH, ignoreCancelled = true)", 1, true) ~= nil, "Bukkit listener options should render")
+	assert_truthy(java_text:find("public void onPlayerJoin(org.bukkit.event.player.PlayerJoinEvent event)", 1, true) ~= nil, "Java listener signature should render")
+	local before_duplicate = java_text
+	assert_equal(minecraft_dev.generate_event_listener({ buffer = java_buffer, platform = "bukkit", event = "org.bukkit.event.player.PlayerJoinEvent", name = "onPlayerJoin" }).error.code, "event_listener_duplicate", "duplicate listener should fail")
+	assert_equal(table.concat(vim.api.nvim_buf_get_lines(java_buffer, 0, -1, false), "\n"), before_duplicate, "duplicate listener failure must not edit")
+	vim.api.nvim_buf_call(java_buffer, function() vim.cmd("silent undo") end)
+	assert_equal(table.concat(vim.api.nvim_buf_get_lines(java_buffer, 0, -1, false), "\n"), original_java, "one undo should revert listener and interface edits")
+
+	local kotlin_path = root .. "/src/main/kotlin/test/VelocityListeners.kt"
+	vim.fn.writefile({ "package test", "class VelocityListeners {", "}" }, kotlin_path)
+	local kotlin_buffer = vim.fn.bufadd(kotlin_path)
+	vim.fn.bufload(kotlin_buffer)
+	vim.bo[kotlin_buffer].filetype = "kotlin"
+	assert_equal(minecraft_dev.generate_event_listener({ buffer = kotlin_buffer, platform = "velocity", event = "com.example.ConnectEvent", name = "onConnect", order = "LAST" }).status, "generated", "Velocity Kotlin listener should generate")
+	local kotlin_text = table.concat(vim.api.nvim_buf_get_lines(kotlin_buffer, 0, -1, false), "\n")
+	assert_truthy(kotlin_text:find("@com.velocitypowered.api.event.Subscribe(order = com.velocitypowered.api.event.PostOrder.LAST)", 1, true) ~= nil, "Velocity order should render")
+	assert_truthy(kotlin_text:find("fun onConnect(event: com.example.ConnectEvent)", 1, true) ~= nil, "Kotlin listener signature should render")
+	local kotlin_single_path = root .. "/src/main/kotlin/test/KotlinBukkit.kt"
+	vim.fn.writefile({ "package test", "class KotlinBukkit(val name: String) {}" }, kotlin_single_path)
+	local kotlin_single_buffer = vim.fn.bufadd(kotlin_single_path)
+	vim.fn.bufload(kotlin_single_buffer)
+	vim.bo[kotlin_single_buffer].filetype = "kotlin"
+	assert_equal(minecraft_dev.generate_event_listener({ buffer = kotlin_single_buffer, platform = "bukkit", event = "org.bukkit.event.Event", name = "handle" }).status, "generated", "single-line Kotlin class listener should generate")
+	local kotlin_single_text = table.concat(vim.api.nvim_buf_get_lines(kotlin_single_buffer, 0, -1, false), "\n")
+	assert_truthy(kotlin_single_text:find(") : org.bukkit.event.Listener {", 1, true) ~= nil, "Kotlin constructor type colon must not be mistaken for a superclass list")
+	assert_truthy(kotlin_single_text:find("fun handle(event: org.bukkit.event.Event)", 1, true) ~= nil, "single-line Kotlin listener should remain inside the class")
+
+	for platform, expected in pairs({
+		bungeecord = "@net.md_5.bungee.event.EventHandler(priority = net.md_5.bungee.event.EventPriority.HIGHEST)",
+		forge = "@net.minecraftforge.fml.common.Mod.EventHandler",
+		neoforge = "@net.neoforged.bus.api.SubscribeEvent",
+		sponge = "@org.spongepowered.api.event.Listener(order = org.spongepowered.api.event.Order.LAST)",
+	}) do
+		local path = root .. "/src/main/java/test/" .. platform .. ".java"
+		vim.fn.writefile({ "package test;", "class Generated {", "}" }, path)
+		local buffer = vim.fn.bufadd(path)
+		vim.fn.bufload(buffer)
+		vim.bo[buffer].filetype = "java"
+		local options = { buffer = buffer, platform = platform, event = "com.example.Event", name = "handle" }
+		if platform == "bungeecord" then options.priority = "HIGHEST" end
+		if platform == "forge" then options.forge_kind = "fml" end
+		if platform == "sponge" then options.order = "LAST" end
+		assert_equal(minecraft_dev.generate_event_listener(options).status, "generated", platform .. " listener should generate")
+		assert_truthy(table.concat(vim.api.nvim_buf_get_lines(buffer, 0, -1, false), "\n"):find(expected, 1, true) ~= nil, platform .. " annotation should render")
+		vim.api.nvim_buf_delete(buffer, { force = true })
+	end
+
+	vim.bo[java_buffer].modifiable = false
+	assert_equal(minecraft_dev.generate_event_listener({ buffer = java_buffer, platform = "neoforge", event = "com.example.Event", name = "other" }).error.code, "source_buffer_readonly", "read-only listener target should fail")
+	vim.bo[java_buffer].modifiable = true
+	assert_equal(minecraft_dev.generate_event_listener({ buffer = java_buffer, platform = "unknown", event = "com.example.Event", name = "other" }).error.code, "event_platform_invalid", "unknown listener platform should fail")
+	assert_equal(minecraft_dev.generate_event_listener({ buffer = java_buffer, platform = "bukkit", event = "com.example.Event", name = "other", priority = "IMPOSSIBLE" }).error.code, "event_option_invalid", "invalid priority should fail")
+	assert_equal(minecraft_dev.generate_event_listener({ buffer = java_buffer, platform = "bukkit", event = "bad event", name = "other" }).error.code, "event_class_invalid", "invalid event class should fail")
+	local original_get_parser = vim.treesitter.get_parser
+	vim.treesitter.get_parser = function(buffer, language)
+		if buffer == java_buffer and language == "java" then error("missing parser") end
+		return original_get_parser(buffer, language)
+	end
+	assert_equal(minecraft_dev.generate_event_listener({ buffer = java_buffer, platform = "neoforge", event = "com.example.Event", name = "other" }).error.code, "parser_unavailable", "missing source parser should fail structurally")
+	vim.treesitter.get_parser = original_get_parser
+
+	local forge_old = minecraft_dev.generate_minecraft_class({ root = root, platform = "forge", kind = "block", class_name = "test.block.OldBlock", minecraft_version = "1.16.5", open = false })
+	assert_equal(forge_old.status, "generated", "legacy Forge class should generate")
+	assert_truthy(table.concat(vim.fn.readfile(forge_old.path), "\n"):find("net.minecraft.block.Block", 1, true) ~= nil, "legacy Forge class should use pre-1.17 package")
+	local forge_new = minecraft_dev.generate_minecraft_class({ root = root, platform = "forge", kind = "packet", class_name = "test.network.SyncPacket", minecraft_version = "1.18.2", open = false })
+	assert_truthy(table.concat(vim.fn.readfile(forge_new.path), "\n"):find("net.minecraftforge.network.NetworkEvent", 1, true) ~= nil, "modern Forge packet should use 1.18 template")
+	local fabric = minecraft_dev.generate_minecraft_class({ root = root, platform = "fabric", kind = "status_effect", class_name = "test.effect.DemoEffect", open = false })
+	assert_truthy(table.concat(vim.fn.readfile(fabric.path), "\n"):find("extends StatusEffect", 1, true) ~= nil, "Fabric status effect should generate")
+	local neoforge = minecraft_dev.generate_minecraft_class({ root = root, platform = "neoforge", kind = "item", class_name = "test.item.DemoItem", open = false })
+	assert_truthy(table.concat(vim.fn.readfile(neoforge.path), "\n"):find("net.minecraft.world.item.Item", 1, true) ~= nil, "NeoForge item should generate")
+	assert_equal(minecraft_dev.generate_minecraft_class({ root = root, platform = "forge", kind = "block", class_name = "test.block.OldBlock", minecraft_version = "1.16.5", open = false }).error.code, "minecraft_class_exists", "existing Minecraft class should not be overwritten")
+	assert_equal(minecraft_dev.generate_minecraft_class({ root = root, platform = "fabric", kind = "packet", class_name = "test.Bad", open = false }).error.code, "minecraft_class_kind_invalid", "unsupported platform class kind should fail")
+	assert_equal(minecraft_dev.generate_minecraft_class({ root = root, source_root = "../outside", platform = "fabric", kind = "block", class_name = "test.Bad", open = false }).error.code, "minecraft_source_root_invalid", "class generation should reject source roots outside the project")
+
+	vim.api.nvim_create_augroup("java_spotbugs", { clear = false })
+	vim.api.nvim_create_augroup("java_spotbugs_post", { clear = false })
+	vim.api.nvim_buf_delete(java_buffer, { force = true })
+	vim.api.nvim_buf_delete(kotlin_buffer, { force = true })
+	vim.api.nvim_buf_delete(kotlin_single_buffer, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -4404,6 +4512,8 @@ local function run()
 	_G.MinecraftDevTestMappingsAndAccessRules = nil
 	_G.MinecraftDevTestMixinSourceActions()
 	_G.MinecraftDevTestMixinSourceActions = nil
+	_G.MinecraftDevTestSourceGeneration()
+	_G.MinecraftDevTestSourceGeneration = nil
 	print("test_refactor.lua: ok")
 end
 
