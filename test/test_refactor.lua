@@ -4436,6 +4436,69 @@ function _G.MinecraftDevTestSourceGeneration()
 	vim.fn.delete(root, "rf")
 end
 
+function _G.MinecraftDevTestSourceInsight()
+	local minecraft_dev = require("minecraft-dev")
+	assert_equal(vim.fn.exists(":MinecraftDevRefreshSourceInsight"), 2, "source insight refresh command should be registered")
+	assert_equal(vim.fn.exists(":MinecraftDevDiagnoseEventListeners"), 2, "event listener diagnostics command should be registered")
+	local root = vim.fn.tempname()
+	local source = root .. "/src/main/java/test"
+	vim.fn.mkdir(root .. "/.git", "p")
+	vim.fn.mkdir(source, "p")
+	local path = source .. "/Insight.java"
+	vim.fn.writefile({
+		"package test;",
+		"import org.bukkit.ChatColor;",
+		"import org.bukkit.event.EventHandler;",
+		"import org.bukkit.event.Listener;",
+		"class MissingListener {",
+		"  @EventHandler public void onEvent(org.bukkit.event.Event event) {}",
+		"  String color = ChatColor.RED.toString();",
+		"}",
+		"class GoodListener implements Listener {",
+		"  @EventHandler public void onEvent(org.bukkit.event.Event event) {}",
+		"  String ignored = Palette.RED.toString();",
+		"}",
+	}, path)
+	local buffer = vim.fn.bufadd(path)
+	vim.fn.bufload(buffer)
+	vim.bo[buffer].filetype = "java"
+	local refreshed = minecraft_dev.refresh_source_insight({ buffer = buffer, root = root })
+	assert_equal(refreshed.status, "refreshed", "source insight should refresh")
+	assert_equal(#refreshed.highlights, 1, "only imported Minecraft color classes should highlight")
+	assert_equal(refreshed.highlights[1].name, "RED", "Minecraft color name should be reported")
+	assert_equal(refreshed.highlights[1].color, "#FF5555", "Minecraft standard red should use the upstream color")
+	assert_equal(#refreshed.diagnostics, 1, "only the class missing Listener should diagnose")
+	assert_equal(refreshed.diagnostics[1].code, "listener_interface_missing", "missing Listener should use a stable code")
+	assert_equal(minecraft_dev.diagnose_event_listeners({ buffer = buffer, root = root }).diagnostics[1].platform, "bukkit", "Bukkit handler import should select Bukkit Listener")
+
+	local kotlin_path = root .. "/src/main/kotlin/test/Bungee.kt"
+	vim.fn.mkdir(root .. "/src/main/kotlin/test", "p")
+	vim.fn.writefile({
+		"package test",
+		"import net.md_5.bungee.event.EventHandler",
+		"class Bungee {",
+		"  @EventHandler fun onEvent(event: com.example.Event) {}",
+		"}",
+	}, kotlin_path)
+	local kotlin_buffer = vim.fn.bufadd(kotlin_path)
+	vim.fn.bufload(kotlin_buffer)
+	vim.bo[kotlin_buffer].filetype = "kotlin"
+	local kotlin_diagnostics = minecraft_dev.diagnose_event_listeners({ buffer = kotlin_buffer, root = root })
+	assert_equal(kotlin_diagnostics.diagnostics[1].platform, "bungeecord", "Kotlin BungeeCord handlers should diagnose")
+
+	local source_insight = require("minecraft-dev.source_insight")
+	source_insight.setup()
+	local first_group = vim.api.nvim_create_augroup("MinecraftDevSourceInsight", { clear = false })
+	source_insight.setup()
+	assert_equal(vim.api.nvim_create_augroup("MinecraftDevSourceInsight", { clear = false }), first_group, "source insight setup should be idempotent")
+
+	vim.api.nvim_create_augroup("java_spotbugs", { clear = false })
+	vim.api.nvim_create_augroup("java_spotbugs_post", { clear = false })
+	vim.api.nvim_buf_delete(buffer, { force = true })
+	vim.api.nvim_buf_delete(kotlin_buffer, { force = true })
+	vim.fn.delete(root, "rf")
+end
+
 local function run()
 	require("minecraft-dev").setup()
 	test_command_parse_success()
@@ -4514,6 +4577,8 @@ local function run()
 	_G.MinecraftDevTestMixinSourceActions = nil
 	_G.MinecraftDevTestSourceGeneration()
 	_G.MinecraftDevTestSourceGeneration = nil
+	_G.MinecraftDevTestSourceInsight()
+	_G.MinecraftDevTestSourceInsight = nil
 	print("test_refactor.lua: ok")
 end
 

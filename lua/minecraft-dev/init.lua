@@ -14,6 +14,7 @@ function M.setup(opts)
 	require("minecraft-dev.fabric_metadata").setup()
 	require("minecraft-dev.mixin_metadata").setup()
 	require("minecraft-dev.access_rules").setup()
+	require("minecraft-dev.source_insight").setup()
 end
 
 ---@param spec table
@@ -247,6 +248,18 @@ end
 ---@return table
 function M.generate_minecraft_class(options)
 	return require("minecraft-dev.class_generation").generate(options)
+end
+
+---@param options? { buffer?: integer, root?: string, max_files?: integer }
+---@return table
+function M.refresh_source_insight(options)
+	return require("minecraft-dev.source_insight").refresh(options)
+end
+
+---@param options? { buffer?: integer, root?: string, max_files?: integer }
+---@return table
+function M.diagnose_event_listeners(options)
+	return require("minecraft-dev.source_insight").diagnose_event_listeners(options)
 end
 
 function M.reload()

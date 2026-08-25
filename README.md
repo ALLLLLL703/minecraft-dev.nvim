@@ -15,6 +15,7 @@ Now can using to generate
 - forge and neoforge mods
 - architectury Fabric/Forge multi-loader mods
 
+The source-level parity audit against upstream 1.8.20 is documented in [UPSTREAM_PARITY.md](UPSTREAM_PARITY.md).
 
 <!-- TOC -->
 
@@ -81,6 +82,10 @@ require("minecraft-dev").setup({
 			indent = "    ",
 			source_root = "src/main/java",
 		},
+		source_insight = {
+			colors = true,
+			event_diagnostics = true,
+		},
 		nbt = {
 			python = "python3",
 			timeout_ms = 10000,
@@ -141,6 +146,8 @@ MinecraftDevFindMixins [fully.qualified.Target]
 MinecraftDevGenerateMixinMember {accessor_getter|accessor_setter|invoker|shadow|overwrite|soft_implements} member [prefix]
 MinecraftDevGenerateEventListener {bukkit|bungeecord|forge|neoforge|velocity|sponge} event_fqn [method] [key=value ...]
 MinecraftDevGenerateMinecraftClass {forge|neoforge|fabric} {block|item|enchantment|mob_effect|status_effect|packet} class_fqn [minecraft_version]
+MinecraftDevRefreshSourceInsight
+MinecraftDevDiagnoseEventListeners
 ```
 
 `:GmcPro` without arguments and `:MinecraftDevNew` open the same builtin Neovim UI wizard backed by the official
@@ -263,6 +270,18 @@ packages/templates can be selected safely. Files are created exclusively under t
 `defaults.source_generation.source_root` and existing files are never overwritten. The upstream class action is Java
 template based, so this API intentionally does not invent Kotlin skeletons. Lua callers can use
 `generate_minecraft_class()` and set `open = false` for non-interactive generation.
+
+Source insight recognizes the upstream standard Minecraft chat color constants in imported Bukkit, BungeeCord,
+Sponge, Adventure/Kyori, and mapped Minecraft classes and applies buffer-local color highlights. It also diagnoses
+Bukkit or BungeeCord classes which directly contain `@EventHandler` methods but provably do not inherit their required
+Listener interface; unknown external inheritance chains are skipped instead of guessed. The behavior is configurable
+under `defaults.source_insight`, and Lua callers can use `refresh_source_insight()` or
+`diagnose_event_listeners()`.
+
+IntelliJ's clickable gutter icons, Swing color picker, project-tree/file icons, and plugin-class badge are editor UI
+extensions rather than Minecraft source semantics. Neovim exposes their useful core through these extmarks,
+diagnostics, ordinary `gd`/LSP navigation, icon plugins, and the existing metadata jump commands; this plugin does not
+ship a second GUI or replace the user's status column.
 
 `:MinecraftDevEditNbt` opens gzip, zlib, or uncompressed binary NBT as an editable typed JSON buffer. Every node keeps
 its exact NBT `type`; signed 64-bit `long` values use decimal strings, lists declare `element_type`, and compounds use

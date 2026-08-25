@@ -46,6 +46,10 @@ M.default_config = {
 			indent = "    ",
 			source_root = "src/main/java",
 		},
+		source_insight = {
+			colors = true,
+			event_diagnostics = true,
+		},
 		nbt = {
 			python = "python3",
 			timeout_ms = 10000,
@@ -203,6 +207,10 @@ M.default_config = {
 			minecraft_class_exists = "Minecraft class already exists: %s",
 			minecraft_class_write_failed = "Failed to write Minecraft class: %s",
 			minecraft_class_generated = "Generated Minecraft class: %s",
+		},
+		source_insight = {
+			listener_interface_missing = "%s event handler class must implement %s.",
+			refreshed = "Refreshed Minecraft source insight: %s",
 		},
 		project = {
 			generated = "Generated Minecraft project at %s",

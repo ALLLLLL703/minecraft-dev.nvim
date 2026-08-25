@@ -8,8 +8,8 @@
 
 - [x] 固定上游提交，并通过 GitHub MCP 读取 `plugin.xml`、Kotlin/TOML/YAML 扩展声明和源码模块
 - [x] 通过本地 CodeGraph 盘点当前公共 API、命令和项目生成路径
-- [ ] 对每个功能组补齐源码级证据与最终状态
-- [ ] 对 IntelliJ PSI、Facet、Project Model、IDE update/error reporter 能力写出不适用依据
+- [x] 对每个功能组补齐源码级证据与最终状态
+- [x] 对 IntelliJ PSI、Facet、Project Model、IDE update/error reporter 能力写出不适用依据
 
 ### 功能组状态
 
@@ -23,9 +23,10 @@
 | MCP mappings / AT / AW / coremod | 已实现 | 查映射、复制/跳转 Access Transformer、Access Widener、coremod target |
 | NBT | 已实现 | 二进制 NBT 与文本视图互转、编辑、校验和安全写回 |
 | Event / class generation | 已实现 | 六个平台 Java/Kotlin event listener；Forge/Fabric/NeoForge Java Minecraft class 模板 |
-| Color / line markers | 待分类 | 优先复用 LSP、Tree-sitter 和 Neovim highlight；仅补 Minecraft 语义差异 |
-| Facet / IDE project model | 待分类 | 预期为 IntelliJ 专属；以文件系统、Gradle/Maven/LSP 能力替代 |
-| IDE update / error reporter | 待分类 | 预期不适用；插件管理和崩溃上报由 Neovim 生态负责 |
+| Color / line markers | 核心已实现，UI 由生态覆盖 | 标准 Minecraft color extmark、Bukkit/Bungee Listener diagnostics；gutter picker/badge 由 statuscolumn/colorizer/icon/LSP 覆盖 |
+| JVM/Mixin 深层 PSI 与 bytecode inspections | IntelliJ 专属，不适用 | 需要 resolved classpath、反编译 bytecode、LVT、control-flow 或 debugger position manager；由 compiler/Mixin AP/LSP/DAP 覆盖 |
+| Facet / IDE project model | IntelliJ 专属，不适用 | 以 filesystem root、manifest、Gradle/Maven 和显式配置替代 |
+| IDE update / error reporter | IntelliJ 专属，不适用 | 插件版本、日志和 issue 上报由 Neovim plugin manager、`:checkhealth` 与 Git 承担 |
 
 ## 阶段 2：Translations 完整能力
 
@@ -84,7 +85,7 @@
 ## 阶段 3：项目元数据与配置文件
 
 - [x] `plugin.yml` / `paper-plugin.yml` 结构、类引用和依赖诊断
-- [ ] `mods.toml` / `neoforge.mods.toml` 结构、版本范围和 mod id 诊断
+- [x] `mods.toml` / `neoforge.mods.toml` 结构、版本范围和 mod id 诊断
 - [x] `fabric.mod.json` entrypoint、mixin config、资源路径和依赖诊断
 - [x] Mixin JSON config package、class、required fields 和 compatibilityLevel 诊断
 - [x] 为确定字段提供补全、hover 或跳转入口
@@ -205,12 +206,20 @@
 
 ## 阶段 6：最终审计与收尾
 
-- [ ] 对总矩阵逐行关闭，不保留“待分类”或“待实现”
-- [ ] 运行全部快速测试和代表性集成场景
-- [ ] 通过已连接 Neovim MCP 验证命令、buffer 状态、diagnostics、跳转和保存
-- [ ] 审查公开 API、配置兼容、本地化和帮助文档
-- [ ] 记录所有 IntelliJ 专属不适用项及其 Neovim 等价能力
-- [ ] 检查目标 diff，不纳入用户已有的无关工作树修改
+### P6.1：源码 insight 与编辑器装饰边界
+
+- [x] 通过 GitHub MCP 读取 ColorAnnotator/ColorLineMarker、ListenerEventAnnotator/LineMarker 与 PluginLineMarker 实现
+- [x] 实现 Java/Kotlin Minecraft 标准颜色引用的 buffer extmark 高亮
+- [x] 实现 Bukkit/BungeeCord EventHandler 所在类的 Listener 结构诊断
+- [x] 记录 event/plugin gutter、color picker 与文件图标的 Neovim 等价边界
+- [x] 通过 Neovim MCP、Lua LSP、完整回归与 JVM LSP 零客户端检查
+
+- [x] 对总矩阵逐行关闭，不保留“待分类”或“待实现”
+- [x] 运行全部快速测试和代表性集成场景
+- [x] 通过已连接 Neovim MCP 验证命令、buffer 状态、diagnostics、跳转和保存
+- [x] 审查公开 API、配置兼容、本地化和帮助文档
+- [x] 记录所有 IntelliJ 专属不适用项及其 Neovim 等价能力
+- [x] 检查目标 diff，不纳入用户已有的无关工作树修改
 
 ## 已完成验证
 
@@ -228,3 +237,4 @@
 - P3.4 Fabric mod JSON：Tree-sitter document model、required/schema/id/environment/dependency diagnostics、Java/Kotlin class/member entrypoint 规则、mixin/accessWidener/icon/license 引用、跳转与类型过滤补全场景通过 Neovim MCP；目标生产 Lua 的 LSP MCP diagnostics、Stylua 与 diff 检查通过。
 - P3.5 Mixin config：JSON/JSON5 scope、field/package/compatibility diagnostics、Java/Kotlin `@Mixin` 与 plugin interface 索引、relative jump 和 mixin/plugin/package/compatibility completion 场景通过 Neovim MCP；目标生产 Lua 的 LSP MCP diagnostics、Stylua 与 diff 检查通过。
 - P5.3 源码生成：Bukkit/BungeeCord/Forge/NeoForge/Velocity/Sponge Java/Kotlin listener、interface、priority/order/cancelled、单行 class、重复/只读/非法/parser 缺失失败与单步 undo 场景，以及 Forge/Fabric/NeoForge class kind、Forge 版本模板、不可覆盖和路径越界场景通过 Neovim MCP；新增生产 Lua 的 LSP MCP diagnostics 为零，JVM LSP 客户端为零。
+- P6.1 source insight：标准 Minecraft color import/fqn、非 Minecraft 同名常量排除、Bukkit/BungeeCord Java/Kotlin Listener 继承诊断、autocmd 幂等和 highlight group exhaustion 安全降级场景通过 Neovim MCP；`source_insight.lua` 与公共入口的 Lua LSP diagnostics 为零，JVM LSP 客户端为零。

@@ -67,6 +67,8 @@ function M.setup()
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGenerateMixinMember")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGenerateEventListener")
 	pcall(vim.api.nvim_del_user_command, "MinecraftDevGenerateMinecraftClass")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevRefreshSourceInsight")
+	pcall(vim.api.nvim_del_user_command, "MinecraftDevDiagnoseEventListeners")
 	vim.api.nvim_create_user_command("GmcPro", function(opts)
 		require("minecraft-dev.command").dispatch(opts.args)
 	end, { nargs = "*", complete = require("minecraft-dev.completion").complete })
@@ -321,6 +323,24 @@ function M.setup()
 			end, values)
 		end,
 	})
+	vim.api.nvim_create_user_command("MinecraftDevRefreshSourceInsight", function()
+		local result = require("minecraft-dev").refresh_source_insight()
+		if result.status == "refreshed" then
+			notify.notify(
+				vim.log.levels.INFO,
+				{ "source_insight", "refreshed" },
+				string.format("%d colors, %d diagnostics", #result.highlights, #result.diagnostics)
+			)
+		else
+			generation_error(result)
+		end
+	end, {})
+	vim.api.nvim_create_user_command("MinecraftDevDiagnoseEventListeners", function()
+		local result = require("minecraft-dev").diagnose_event_listeners()
+		if result.status == "failed" then
+			generation_error(result)
+		end
+	end, {})
 end
 
 function M.dispatch(args)
